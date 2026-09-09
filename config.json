@@ -1,0 +1,7 @@
+{
+  "hedera_network": "testnet",
+  "topic_id": "0.0.10402297",
+  "mirror_node_url": "https://testnet.mirrornode.hedera.com",
+  "HUMAN_REGISTRY_ADDRESS":"0xd8d6d953D0a725757AA540Aa3cAdD332F83dDe21",
+  "AGENT_IDENTITY_REGISTRY_ADDRESS":"0xfE6Ce410702c46B313991C7B7dA649545d9ebEce"
+}
