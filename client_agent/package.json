@@ -1,0 +1,13 @@
+{
+  "name": "client-agent",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@reclaimprotocol/js-sdk": "^2.1.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.17.0"
+  }
+}
