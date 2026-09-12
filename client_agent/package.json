@@ -1,13 +1,19 @@
 {
-  "name": "client-agent",
+  "name": "server-agent",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-    "start": "node index.js"
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
   },
   "dependencies": {
-    "@reclaimprotocol/js-sdk": "^2.1.0",
-    "dotenv": "^16.4.5",
-    "ethers": "^6.17.0"
+    "@hashgraph/sdk": "^2.81.0",
+    "@reclaimprotocol/reclaim-node": "^1.0.2",
+    "@reclaimprotocol/zk-fetch": "^1.1.0",
+    "axios": "^1.20.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "ethers": "^6.17.0",
+    "express": "^4.22.2"
   }
 }

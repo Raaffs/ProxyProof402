@@ -1,3 +1,6 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "lib/reclaim-solidity-sdk"]
+	path = lib/reclaim-solidity-sdk
+	url = https://github.com/reclaimprotocol/reclaim-solidity-sdk

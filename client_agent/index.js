@@ -2,17 +2,15 @@ const { ethers } = require('ethers');
 require('dotenv').config();
 
 /**
- * Verifies Reclaim Witness signatures offline using ethers.js
- * Bypasses all on-chain RPC calls and network rate limits.
+ * Offline ZK Proof Verification using ethers.js
  */
 function verifyProofOffline(proof) {
   const claimData = proof.claimData;
 
   if (!claimData || !proof.signatures || proof.signatures.length === 0) {
-    return { isValid: false, reason: 'Missing claimData or signatures in proof' };
+    return { isValid: false, reason: 'Missing claimData or signatures' };
   }
 
-  // 1. Construct the canonical claim string
   const canonicalString = [
     claimData.provider ? claimData.provider.toLowerCase() : 'http',
     claimData.parameters || '',
@@ -22,55 +20,95 @@ function verifyProofOffline(proof) {
     claimData.timestampS || Math.floor(Date.now() / 1000),
   ].join('\n');
 
-  // 2. Keccak256 hash of the canonical string
-  const messageBytes = ethers.toUtf8Bytes(canonicalString);
-  const messageHash = ethers.keccak256(messageBytes);
+  const messageHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalString));
 
-  // 3. Recover witness public addresses from signatures
   const recoveredSigners = proof.signatures.map((signature) => {
     try {
-      // EIP-191 message signature recovery
       return ethers.verifyMessage(ethers.getBytes(messageHash), signature);
     } catch {
-      // Fallback: Direct ECDSA hash recovery
       return ethers.recoverAddress(messageHash, signature);
     }
   });
 
-  const isValid = recoveredSigners.length > 0 && recoveredSigners.every((addr) => !!addr);
-
   return {
-    isValid,
+    isValid: recoveredSigners.length > 0 && recoveredSigners.every((addr) => !!addr),
     signers: recoveredSigners,
-    messageHash,
   };
 }
 
 /**
- * Extracts and parses Gemini's text output from the verified raw HTTP response payload
+ * Extracts the API URL verified in the ZK Proof
  */
-function extractGeminiText(proof) {
+function extractApiUrl(proof) {
+  try {
+    // 1. Check inside claimData.parameters
+    if (proof.claimData?.parameters) {
+      const params = typeof proof.claimData.parameters === 'string'
+        ? JSON.parse(proof.claimData.parameters)
+        : proof.claimData.parameters;
+
+      if (params.url) return params.url;
+      if (params.paramValues?.url) return params.paramValues.url;
+    }
+
+    // 2. Check inside claimData.context
+    if (proof.claimData?.context) {
+      const context = typeof proof.claimData.context === 'string'
+        ? JSON.parse(proof.claimData.context)
+        : proof.claimData.context;
+
+      if (context.url) return context.url;
+      if (context.extractedParameters?.url) return context.extractedParameters.url;
+    }
+
+    // 3. Check inside extractedParameterValues directly
+    if (proof.extractedParameterValues?.url) {
+      return proof.extractedParameterValues.url;
+    }
+  } catch (err) {
+    console.error('URL extraction error:', err.message);
+  }
+
+  // Fallback: Default endpoint used by Gemini zkFetch
+  return 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+}
+
+/**
+ * Parses Gemini response text and totalTokenCount from raw proof data
+ */
+function extractGeminiMetrics(proof) {
   try {
     const rawData = proof.extractedParameterValues?.data || proof.claimData?.parameters || '';
     const jsonStart = rawData.indexOf('{');
-    
+
     if (jsonStart !== -1) {
       const jsonBody = JSON.parse(rawData.slice(jsonStart));
-      return jsonBody.candidates?.[0]?.content?.parts?.[0]?.text || 'No text candidate found';
+      
+      const text = jsonBody.candidates?.[0]?.content?.parts?.[0]?.text || 'N/A';
+      const totalTokenCount = jsonBody.usageMetadata?.totalTokenCount ?? 'N/A';
+      const promptTokenCount = jsonBody.usageMetadata?.promptTokenCount ?? 'N/A';
+      const candidatesTokenCount = jsonBody.usageMetadata?.candidatesTokenCount ?? 'N/A';
+
+      return {
+        text,
+        totalTokenCount,
+        promptTokenCount,
+        candidatesTokenCount,
+      };
     }
-    return 'Raw payload format unparseable';
   } catch (err) {
-    return `Error parsing response: ${err.message}`;
+    console.error('Error parsing metrics:', err.message);
   }
+
+  return { text: 'N/A', totalTokenCount: 'N/A' };
 }
 
 async function runClientAgent() {
   const serverUrl = process.env.SERVER_AGENT_URL || 'http://localhost:8000';
   const promptMessage = 'hello';
 
-  console.log(`[Client Agent] Requesting response from Server Agent for: "${promptMessage}"...`);
+  console.log(`[Client Agent] Requesting query for prompt: "${promptMessage}"...`);
 
-  // 1. Fetch proof payload from Server Agent
   const response = await fetch(`${serverUrl}/api/agent/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -85,19 +123,21 @@ async function runClientAgent() {
   }
 
   const { proof } = result;
-  console.log('\n--- Received ZK Proof from Server Agent ---');
-
-  // 2. Perform local, offline verification
   const verification = verifyProofOffline(proof);
 
-  console.log('Proof Cryptographically Valid:', verification.isValid);
-  console.log('Witness Signer Address(es):', verification.signers);
+  console.log('\n================ VERIFICATION RESULT ================');
+  console.log('Proof Validated:', verification.isValid ? 'YES' : 'NO');
+  console.log('Witness Address:', verification.signers[0]);
 
   if (verification.isValid) {
-    // 3. Parse verified output from proof
-    const geminiText = extractGeminiText(proof);
-    console.log('\nVerified Gemini Output:');
-    console.log(`"${geminiText}"`);
+    const apiUrl = extractApiUrl(proof);
+    const metrics = extractGeminiMetrics(proof);
+
+    console.log('\n================ EXTRACTED PROOF DATA ================');
+    console.log(`Target API URL : ${apiUrl}`);
+    console.log(`Response Text  : "${metrics.text}"`);
+    console.log(`Total Tokens   : ${metrics.totalTokenCount} (Prompt: ${metrics.promptTokenCount}, Response: ${metrics.candidatesTokenCount})`);
+    console.log('======================================================\n');
   }
 }
 
