@@ -1,35 +1,53 @@
 const { ReclaimClient } = require('@reclaimprotocol/zk-fetch');
-const axios = require('axios');
 const env = require('../config/env.js');
 
 class GeminiService {
-  constructor() {
-    this.reclaimClient = new ReclaimClient(env.reclaimAppId, env.reclaimAppSecret);
-    this.endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
-  }
+    constructor() {
+        this.reclaimClient = new ReclaimClient(env.reclaimAppId, env.reclaimAppSecret);
+        this.endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
+    }
 
-  async fetchWithZkProof(prompt) {
-    const publicOptions = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    };
+    async fetchWithZkProof(prompt) {
+        console.log('[Server]: received prompt')
+        const publicOptions = {
+  
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        };
 
-    const privateOptions = {
-      headers: { 'x-goog-api-key': env.geminiApiKey },
-    };
+        const privateOptions = {
+            headers: { 'x-goog-api-key': env.geminiApiKey },
+        };
+        console.log('[Server]: init private opts on zktls')
 
-    return await this.reclaimClient.zkFetch(this.endpoint, publicOptions, privateOptions);
-  }
+        // Standard zkFetch call - zero axios dependency
+        const proof = await this.reclaimClient.zkFetch(this.endpoint, publicOptions, privateOptions);
+        console.log('[Server]: proof done')
 
-  async fetchUnverified(prompt) {
-    const response = await axios.post(
-      `${this.endpoint}?key=${env.geminiApiKey}`,
-      { contents: [{ parts: [{ text: prompt }] }] },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-    return response.data;
-  }
+        return proof;
+    }
+
+    extractGeminiMetrics(proof) {
+        try {
+            const rawData = proof.extractedParameterValues?.data || proof.claimData?.parameters || '';
+            const jsonStart = rawData.indexOf('{');
+
+            if (jsonStart !== -1) {
+                const jsonBody = JSON.parse(rawData.slice(jsonStart));
+                const totalTokens = jsonBody.usageMetadata?.totalTokenCount || 0;
+                const responseText = jsonBody.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+                return {
+                    text: responseText,
+                    totalTokenCount: Number(totalTokens),
+                };
+            }
+        } catch (err) {
+            console.error('[GeminiService] Extraction error:', err);
+        }
+        return { text: 'N/A', totalTokenCount: 0 };
+    }
 }
 
 module.exports = new GeminiService();

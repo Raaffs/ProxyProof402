@@ -3,17 +3,32 @@ const env = require('../config/env.js');
 
 class HederaPaymentService {
   constructor() {
-    const operatorIdStr = env.operatorId || process.env.OPERATOR_ID || process.env.HEDERA_ACCOUNT_ID;
-    const operatorKeyStr = env.operatorKey || process.env.OPERATOR_KEY || process.env.ETH_PRIVATE_KEY;
+    const operatorIdStr = env.operatorId || process.env.OPERATOR_ID || process.env.PAYEE_ACCOUNT_ID || '0.0.10436180';
+    const operatorKeyStr = env.operatorKey || process.env.SERVER_OPERATOR_KEY || process.env.ACCOUNT_PRIVATE_KEY;
+
+    if (!operatorIdStr || !operatorKeyStr) {
+      throw new Error('HederaPaymentService: Missing OPERATOR_ID or OPERATOR_KEY credentials.');
+    }
 
     this.operatorId = AccountId.fromString(operatorIdStr);
-    this.operatorKey = PrivateKey.fromStringECDSA(operatorKeyStr);
+
+    const cleanKey = String(operatorKeyStr).trim().replace(/^["']|["']$/g, '');
+    try {
+      this.operatorKey = PrivateKey.fromStringECDSA(cleanKey);
+    } catch (_) {
+      this.operatorKey = PrivateKey.fromString(cleanKey);
+    }
+
     this.client = Client.forTestnet().setOperator(this.operatorId, this.operatorKey);
   }
 
+  /**
+   * Constructs and signs an x402-compliant Hedera TransferTransaction payload.
+   * Supports optional overpayment to test dynamic server-side refunds.
+   */
   async createSignedPaymentHeader(requirement, extraAmountTinybars = 0) {
     const totalAmount = parseInt(requirement.amount, 10) + extraAmountTinybars;
-    const feePayerId = AccountId.fromString(requirement.extra.feePayer);
+    const feePayerId = AccountId.fromString(requirement.extra?.feePayer || requirement.payTo);
 
     const transaction = new TransferTransaction()
       .setTransactionId(TransactionId.generate(feePayerId))
@@ -32,7 +47,10 @@ class HederaPaymentService {
       payload: { transaction: base64Tx },
     };
 
-    return Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
+    return {
+      xPaymentHeader: Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
+      totalPaidTinybars: totalAmount,
+    };
   }
 }
 

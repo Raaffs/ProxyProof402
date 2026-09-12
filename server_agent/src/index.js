@@ -9,7 +9,7 @@ app.use(express.json());
 
 app.use('/api', agentRoutes);
 
-app.listen(env.port, () => {
-  console.log(`🚀 Server Agent active on http://localhost:${env.port}`);
+app.listen("8000", () => {
+  console.log(`🚀 Server Agent active on http://localhost:8000`);
   console.log(`📌 Payee Account: ${env.payeeAccount}`);
 });

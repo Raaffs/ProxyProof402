@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
-
+pragma solidity ^0.8.20; // or =0.8.20
 interface IHumanRegistry {
     function isHuman(address account) external view returns (bool);
 }
 
 contract HumanRegistry is IHumanRegistry {
+    
     mapping(address => bool) private _humans;
 
     event HumanRegistered(address indexed human);

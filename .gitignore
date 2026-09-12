@@ -5,7 +5,7 @@ lib
 cache
 out
 node_modules/
-
+proofs/*
 # Created by https://www.toptal.com/developers/gitignore/api/go,python,visualstudiocode,node,react,solidity
 # Edit at https://www.toptal.com/developers/gitignore?templates=go,python,visualstudiocode,node,react,solidity
 
@@ -445,3 +445,4 @@ sketch
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/go,python,visualstudiocode,node,react,solidity
+broadcast

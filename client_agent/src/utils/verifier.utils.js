@@ -1,11 +1,27 @@
 const { ethers } = require('ethers');
 
-function verifyProofOffline(proof) {
-  const claimData = proof.claimData;
-
-  if (!claimData || !proof.signatures || proof.signatures.length === 0) {
-    return { isValid: false, signers: [] };
+function unwrapProof(inputProof) {
+  let proof = inputProof;
+  if (typeof proof === 'string') {
+    try {
+      proof = JSON.parse(proof);
+    } catch {
+      return null;
+    }
   }
+  if (proof && proof.zkProof) {
+    proof = proof.zkProof;
+  }
+  return proof;
+}
+
+function verifyProofOffline(rawProof) {
+  const proof = unwrapProof(rawProof);
+  if (!proof || !proof.claimData || !proof.signatures || proof.signatures.length === 0) {
+    return { isValid: false, signers: [], error: 'Missing claimData or signatures' };
+  }
+
+  const claimData = proof.claimData;
 
   const canonicalString = [
     claimData.provider ? claimData.provider.toLowerCase() : 'http',
@@ -21,15 +37,103 @@ function verifyProofOffline(proof) {
   const recoveredSigners = proof.signatures.map((sig) => {
     try {
       return ethers.verifyMessage(ethers.getBytes(messageHash), sig);
-    } catch {
-      return ethers.recoverAddress(messageHash, sig);
+    } catch (_) {
+      try {
+        return ethers.recoverAddress(messageHash, sig);
+      } catch (err) {
+        return null;
+      }
     }
   });
 
+  const validSigners = recoveredSigners.filter((s) => !!s);
   return {
-    isValid: recoveredSigners.length > 0 && recoveredSigners.every((s) => !!s),
-    signers: recoveredSigners,
+    isValid: validSigners.length > 0 && validSigners.length === proof.signatures.length,
+    signers: validSigners,
   };
 }
 
-module.exports = { verifyProofOffline };
+function extractGeminiMetrics(rawProof) {
+  const proof = unwrapProof(rawProof) || rawProof;
+
+  try {
+    let rawData =
+      proof?.extractedParameterValues?.data ||
+      proof?.claimData?.parameters ||
+      '';
+
+    if (!rawData && proof?.claimData?.context) {
+      try {
+        const parsedContext = typeof proof.claimData.context === 'string'
+          ? JSON.parse(proof.claimData.context)
+          : proof.claimData.context;
+        rawData = parsedContext?.extractedParameters?.data || '';
+      } catch (_) {}
+    }
+
+    if (!rawData) return { text: 'N/A', totalTokenCount: 0 };
+
+    const headerEndIndex = rawData.indexOf('\r\n\r\n');
+    const searchString = headerEndIndex !== -1 ? rawData.slice(headerEndIndex + 4) : rawData;
+    const jsonStart = searchString.indexOf('{');
+
+    if (jsonStart !== -1) {
+      const jsonBody = JSON.parse(searchString.slice(jsonStart));
+      return {
+        text: jsonBody.candidates?.[0]?.content?.parts?.[0]?.text || 'N/A',
+        totalTokenCount: Number(jsonBody.usageMetadata?.totalTokenCount ?? 0),
+      };
+    }
+  } catch (err) {
+    console.error('[Verifier] Extraction error:', err.message);
+  }
+
+  return { text: 'N/A', totalTokenCount: 0 };
+}
+
+function verifyRefundAccounting({
+  zkProof,
+  refundDetails,
+  paidTinybars,
+  tokenRateTinybars = 1000,
+}) {
+  const { totalTokenCount } = extractGeminiMetrics(zkProof);
+
+  const paid = BigInt(paidTinybars);
+  const rate = BigInt(tokenRateTinybars);
+  const tokens = BigInt(totalTokenCount);
+
+  const expectedActualCost = tokens * rate;
+  const expectedRefundAmount = paid > expectedActualCost ? paid - expectedActualCost : 0n;
+
+  const reportedActualCost = BigInt(refundDetails?.actualCostTinybars || 0);
+  const reportedRefundAmount = BigInt(refundDetails?.refundAmountTinybars || 0);
+
+  const isCostValid = reportedActualCost === expectedActualCost;
+  const isRefundAmountValid = reportedRefundAmount === expectedRefundAmount;
+  const isRefundStateValid = paid > expectedActualCost ? refundDetails?.refunded === true : true;
+
+  const isMathCorrect = isCostValid && isRefundAmountValid && isRefundStateValid;
+
+  return {
+    isMathCorrect,
+    totalTokenCount,
+    paidTinybars: paid.toString(),
+    expectedActualCost: expectedActualCost.toString(),
+    reportedActualCost: reportedActualCost.toString(),
+    expectedRefundAmount: expectedRefundAmount.toString(),
+    reportedRefundAmount: reportedRefundAmount.toString(),
+    checks: {
+      isCostValid,
+      isRefundAmountValid,
+      isRefundStateValid,
+    },
+  };
+}
+
+module.exports = {
+  verifyProofOffline,
+  extractGeminiMetrics,
+  verifyRefundAccounting,
+  unwrapProof,
+};

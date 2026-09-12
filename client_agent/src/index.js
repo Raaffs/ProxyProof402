@@ -1,25 +1,40 @@
 require('dotenv').config();
+const readline = require('readline');
+// Adjusted relative path for src/index.js -> ./services/
 const clientAgentService = require('./services/clientAgent.service.js');
-const env = require('./config/env.js');
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+function promptUser() {
+  rl.question('\nEnter your prompt (or type "exit" to quit):\n> ', async (input) => {
+    const prompt = input.trim();
+    if (prompt.toLowerCase() === 'exit') {
+      console.log('Exiting Client AI Agent.');
+      rl.close();
+      process.exit(0);
+    }
+
+    if (!prompt) {
+      return promptUser();
+    }
+
+    try {
+      // Simulate 30,000,000 tinybars overpayment to test refund audit logic
+      await clientAgentService.processUserPrompt(prompt, 30000000);
+    } catch (_) {}
+
+    promptUser();
+  });
+}
 
 async function main() {
-  // Fallback chain for base or target URL
-  const rawUrl =
-    env.serverTargetUrl ||
-    env.serverAgentUrl ||
-    process.env.SERVER_AGENT_URL ||
-    'http://localhost:8000';
-
-  const cleanUrl = String(rawUrl).replace(/\/+$/, '');
-
-  // Resolve specific endpoints safely
-  const verifiedUrl = cleanUrl.includes('/api/protected')
-    ? cleanUrl
-    : `${cleanUrl}/api/protected/verified`;
-
-  const unverifiedUrl = verifiedUrl.replace('/protected/verified', '/protected/unverified');
-
-  await clientAgentService.runInteractiveDemo();
+  console.log('====================================================');
+  console.log('  Autonomous Client AI Agent CLI (zkTLS + x402)  ');
+  console.log('====================================================');
+  promptUser();
 }
 
 main().catch(console.error);

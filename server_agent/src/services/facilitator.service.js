@@ -18,13 +18,16 @@ class FacilitatorService {
     return this.feePayerCache;
   }
 
-  async buildRequirements() {
+  // Accepts dynamic agentAccountId (defaults to env.payeeAccount if not provided)
+  async buildRequirements(agentAccountId) {
     const feePayer = await this.getFeePayer();
+    const targetPayToAccount = agentAccountId || env.payeeAccount;
+
     return {
       scheme: 'exact',
       network: this.network,
       amount: env.requiredAmountTinybars,
-      payTo: env.payeeAccount,
+      payTo: targetPayToAccount, // Sends 402 challenge requesting payment to the Agent's address
       maxTimeoutSeconds: 300,
       asset: '0.0.0',
       extra: { feePayer },
@@ -32,7 +35,6 @@ class FacilitatorService {
   }
 
   async settlePayment(paymentPayload) {
-    // Pass paymentPayload.accepted directly so requirements match 1:1
     const paymentRequirements = paymentPayload.accepted;
 
     try {
@@ -46,7 +48,7 @@ class FacilitatorService {
         return {
           success: true,
           transaction: response.data.transaction,
-          payerAccount: response.data.payer || response.data.payerAccount || env.payeeAccount,
+          payerAccount: response.data.payer || response.data.payerAccount,
           paidAmountTinybars: paymentRequirements?.amount || env.requiredAmountTinybars,
         };
       } else {

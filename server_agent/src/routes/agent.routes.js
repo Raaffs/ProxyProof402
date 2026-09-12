@@ -1,9 +1,9 @@
-const { Router } = require('express');
+const express = require('express');
+const router = express.Router();
 const agentController = require('../controllers/agent.controller.js');
 
-const router = Router();
-
-router.get('/protected/verified', agentController.getProtectedVerified);
-router.get('/protected/unverified', agentController.getProtectedUnverified);
+// --- Gemini Endpoints ---
+router.get('/protected/verified/gemini', agentController.getGeminiVerified);
+router.get('/protected/unverified/gemini', agentController.getGeminiUnverified);
 
 module.exports = router;

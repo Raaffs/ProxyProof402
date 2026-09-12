@@ -34,6 +34,9 @@ class HcsDiscoveryService {
     ];
   }
 
+  /**
+   * Reads registered agent capability cards from Hedera Consensus Service (HCS) Mirror Node
+   */
   async fetchHcsAgentCards() {
     if (!this.discoveryTopicId) {
       return this.getFallbackAgentCards();
@@ -57,11 +60,14 @@ class HcsDiscoveryService {
 
       return cards.length > 0 ? cards : this.getFallbackAgentCards();
     } catch (err) {
-      console.warn(`[HCS Discovery Warning] Using fallback cards due to: ${err.message}`);
+      console.warn(`[HCS Discovery Warning] Falling back to default directory: ${err.message}`);
       return this.getFallbackAgentCards();
     }
   }
 
+  /**
+   * Selects an appropriate AI provider based on prompt intent matching
+   */
   async discoverAndSelectAgent(userPrompt) {
     const agentCards = await this.fetchHcsAgentCards();
     const lowerPrompt = userPrompt.toLowerCase();
