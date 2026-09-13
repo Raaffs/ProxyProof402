@@ -31,49 +31,36 @@ The **Server Agent** (`server_agent/`) operates as a commercial AI service provi
 
 ---
 
-## PlantUML Server Interaction Diagram
+## Server Agent Architecture Diagram
 
-```plantuml
-@startuml Server_Agent_Interaction
-skinparam sequenceMessageAlign center
+```mermaid
+graph LR
+    Client["Client Agent"]
 
-actor "Client Agent" as Client
-participant "Agent Controller\n(Express 8000)" as Controller
-participant "Facilitator Service" as Facilitator
-participant "Gemini Service\n(Reclaim zkFetch)" as GeminiService
-participant "Gemini API\n(Google)" as GeminiAPI
-participant "Hedera Service\n(Hedera SDK)" as HederaSDK
-participant "Sign Utility" as SignUtil
+    subgraph ServerNode ["Server Agent Node (Express 8000)"]
+        Controller["agent.controller.js<br/>• getProviderVerified()<br/>• handlePaymentCheck()<br/>• Sends 402 Challenge / Verifies X-PAYMENT"]
+        FacilitatorSvc["facilitator.service.js<br/>• buildRequirements()<br/>• settlePayment() via HTTP POST"]
+        GeminiSvc["gemini.service.js<br/>• fetchWithZkProof(prompt)<br/>• extractGeminiMetrics()"]
+        HederaSvc["hedera.service.js<br/>• processRefundIfOverpaid()<br/>• TransferTransaction (HBAR)"]
+        SignUtil["sign.js<br/>• signTokenId(tokenId, opPrivateKey)<br/>• ECDSA ethSignedMessageHash"]
+    end
 
-== 1. 402 Challenge Phase ==
-Client -> Controller: GET /api/protected/verified/gemini?prompt=hello
-Controller --> Client: HTTP 402 Payment Required (Price, Payee, Network)
+    subgraph External ["External Infrastructure"]
+        Facilitator["x402 Facilitator<br/>(https://x402-facilitator...)"]
+        GeminiAPI["Google Gemini API<br/>(v1beta generateContent)"]
+        HederaNet["Hedera Testnet Node"]
+    end
 
-== 2. Payment Settlement Phase ==
-Client -> Controller: GET /api/protected/verified/gemini?prompt=hello (with X-PAYMENT)
-Controller -> Facilitator: settlePayment(paymentPayload)
-Facilitator -> Facilitator: POST /settle to x402 Facilitator
-Facilitator --> Controller: Settlement Success (Tx ID, Payer Account, Paid Tinybars)
-
-== 3. zkTLS Provider Query Phase ==
-Controller -> GeminiService: fetchWithZkProof(prompt)
-GeminiService -> GeminiAPI: zkFetch POST /generateContent (Redacts API Key)
-GeminiAPI --> GeminiService: HTTP Response + Cryptographic zkTLS Proof
-GeminiService --> Controller: zkProof Payload
-
-== 4. Accounting & Overpayment Refund Phase ==
-Controller -> GeminiService: extractGeminiMetrics(zkProof)
-GeminiService --> Controller: (text, totalTokenCount)
-Controller -> Controller: Calculate actualCost = totalTokenCount * tokenRateTinybars
-alt paidTinybars > actualCost
-    Controller -> HederaSDK: processRefundIfOverpaid(payer, refundAmount)
-    HederaSDK -> HederaSDK: Execute Hedera TransferTransaction (HBAR Refund)
-    HederaSDK --> Controller: Refund Details (refundTxId, refunded=true)
-end
-
-== 5. ECDSA Operational Signature Phase ==
-Controller -> SignUtil: signTokenId(tokenId, operationalPrivateKey)
-SignUtil --> Controller: (signature, signerAddress)
-Controller --> Client: HTTP 200 OK (text, totalTokens, zkProof, signature, refundDetails)
-@enduml
+    Client -->|1. GET /api/protected/verified/gemini?prompt=...| Controller
+    Controller -->|2. HTTP 402 Payment Required Challenge| Client
+    Client -->|3. GET Request with Base64 X-PAYMENT Header| Controller
+    Controller -->|4. settlePayment(paymentPayload)| FacilitatorSvc
+    FacilitatorSvc -->|POST /settle| Facilitator
+    Controller -->|5. fetchWithZkProof(prompt)| GeminiSvc
+    GeminiSvc -->|zkFetch POST (Redacts x-goog-api-key)| GeminiAPI
+    GeminiAPI -->|HTTP Body + zkTLS Proof| GeminiSvc
+    Controller -->|6. Calculate actual cost & refund| HederaSvc
+    HederaSvc -->|Execute TransferTransaction| HederaNet
+    Controller -->|7. Sign response tokenId| SignUtil
+    Controller -->|8. HTTP 200 OK (text, zkProof, refundDetails)| Client
 ```

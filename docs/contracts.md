@@ -48,58 +48,30 @@ The **ProxyProof402** smart contract suite is deployed on the **Hedera EVM Testn
 
 ---
 
-## PlantUML Interaction Diagram
+## Smart Contracts Architecture Diagram
 
-```plantuml
-@startuml Contracts_Interaction
-skinparam sequenceMessageAlign center
+```mermaid
+graph TD
+    subgraph IdentityLayer ["1. Identity & Ownership Layer"]
+        HR["HumanRegistry.sol<br/>• registerHuman()<br/>• isHuman(account): bool"]
+        AIR["AgentIdentityRegistry.sol (ERC-8004 NFT)<br/>• registerAgent(opKey, uri, endpoint, sig, rate)<br/>• setOperationalKey(tokenId, newOpKey, sig)<br/>• verifyAgentKey(tokenId, keyToVerify): bool<br/>• agents(tokenId): AgentStruct"]
+    end
 
-actor "Human Owner" as Owner
-actor "Client Account" as Client
-participant "HumanRegistry" as HR
-participant "AgentIdentityRegistry" as AIR
-participant "AgentUsageValidator" as AUV
-participant "Reclaim Verifier SDK" as Reclaim
-participant "Reputation" as Rep
+    subgraph VerificationLayer ["2. Verification & Slashing Layer"]
+        AUV["AgentUsageValidator.sol (Verification Engine)<br/>• validateUsage(tokenId, agentSig, proof)<br/>• extractJsonStringValue(params, key)"]
+        Reclaim["Reclaim Solidity SDK<br/>• verifyProof(proof)"]
+        Rep["Reputation.sol<br/>• deductAndTransferPoint(agentId, client)<br/>• payAgentWithPoints(receivingAgentId, amount)<br/>• agentTrustPoints(agentId): uint256"]
+    end
 
-== 1. Human & Agent Registration ==
-Owner -> HR: registerHuman()
-HR --> Owner: Registered (isHuman = true)
+    Owner["Human Owner"] -->|registerHuman()| HR
+    Owner -->|registerAgent() + signature| AIR
+    AIR -->|Check isHuman(msg.sender)| HR
 
-Owner -> AIR: registerAgent(operationalKey, uri, thirdpartyEndpoint, signature, rate)
-AIR -> HR: isHuman(msg.sender)
-HR --> AIR: true
-AIR -> AIR: Verify operationalKey signature on keccak256(msg.sender, uri, thirdpartyEndpoint)
-AIR -> AIR: Mint ERC-721 Token NFT & store Agent struct
-AIR --> Owner: tokenId minted
-
-== 2. Usage Validation & Slashing ==
-Client -> AUV: validateUsage(tokenId, agentSignature, proof)
-AUV -> AIR: verifyAgentKey(tokenId, recoveredAgentKey)
-AIR --> AUV: (isAuthorized = true, owner)
-
-AUV -> Reclaim: verifyProof(proof)
-Reclaim --> AUV: Proof Cryptographically Valid
-
-AUV -> AIR: getAgentThirdPartyEndpoint(tokenId)
-AIR --> AUV: expectedUrl
-
-AUV -> AUV: Extract actualUrl from proof.claimInfo.parameters
-alt actualUrl != expectedUrl (Fraud Detected)
-    AUV -> Rep: deductAndTransferPoint(tokenId, client)
-    Rep -> AIR: ownerOf(tokenId)
-    AIR --> Rep: owner
-    Rep -> Rep: Deduct 1 point from Agent Score
-    Rep -> Rep: Credit 1 point to Client Trust Points
-    Rep --> AUV: Slashed & Points Transferred
-end
-AUV --> Client: (actualTokensUsed, slashed)
-
-== 3. Client Trust Point Redemption ==
-Client -> Rep: payAgentWithPoints(receivingAgentId, pointsAmount)
-Rep -> AIR: ownerOf(receivingAgentId)
-AIR --> Rep: owner
-Rep -> Rep: Deduct points from Client, add to Receiving Agent Score
-Rep --> Client: Trust Points Redeemed
-@enduml
+    Client["Client Account / Agent"] -->|validateUsage(tokenId, sig, proof)| AUV
+    AUV -->|verifyAgentKey(tokenId, opKey)| AIR
+    AUV -->|getAgentThirdPartyEndpoint(tokenId)| AIR
+    AUV -->|verifyProof(proof)| Reclaim
+    AUV -->|If URL mismatch: deductAndTransferPoint()| Rep
+    Rep -->|Check ownerOf(agentId)| AIR
+    Client -->|payAgentWithPoints()| Rep
 ```

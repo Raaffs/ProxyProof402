@@ -33,56 +33,36 @@ The **Client Agent** (`client_agent/`) acts as an autonomous proxy and execution
 
 ---
 
-## PlantUML Client Interaction Diagram
+## Client Agent Architecture Diagram
 
-```plantuml
-@startuml Client_Agent_Interaction
-skinparam sequenceMessageAlign center
+```mermaid
+graph TD
+    User["User / Web Frontend"]
 
-actor "User / Frontend" as User
-participant "Client Agent Service" as ClientService
-participant "HCS Discovery Service" as HCSDiscovery
-participant "Hedera Mirror Node" as MirrorNode
-participant "Hedera Payment Service" as PaymentService
-participant "Server Agent" as ServerAgent
-participant "Offline Verifier Utils" as VerifierUtils
-participant "AgentUsageValidator\n(Hedera EVM)" as ValidatorContract
+    subgraph ClientNode ["Client Agent Node (Express 5000)"]
+        Main["main.js & SSE Stream<br/>• /api/execute-agent-stream<br/>• World ID /api/verify-proof"]
+        ClientSvc["clientAgent.service.js<br/>• processUserPrompt()<br/>• Execution Orchestrator"]
+        HCSDisc["hcsDiscovery.service.js<br/>• fetchHcsAgentCards()<br/>• HCS-26 Payload Parser"]
+        PaymentSvc["hederaPayment.service.js<br/>• createSignedPaymentHeader()<br/>• Frozen TransferTransaction"]
+        VerifierUtils["verifier.utils.js<br/>• verifyProofOffline()<br/>• verifyRefundAccounting()<br/>• transformProofForSolidity()<br/>• triggerOnChainValidation()"]
+    end
 
-== 1. Discovery Phase ==
-User -> ClientService: Submit Prompt ("hello")
-ClientService -> HCSDiscovery: fetchHcsAgentCards()
-HCSDiscovery -> MirrorNode: GET /api/v1/topics/0.0.10402297/messages
-MirrorNode --> HCSDiscovery: HCS-26 Message Stream
-HCSDiscovery --> ClientService: Selected Agent Card (Endpoint, Rate)
+    subgraph Infrastructure ["Hedera & Server Dependencies"]
+        Mirror["Hedera Mirror Node<br/>(/api/v1/topics/0.0.10402297)"]
+        Server["Server Agent (Port 8000)<br/>(402 Challenge & zkTLS)"]
+        ValidatorContract["AgentUsageValidator.sol<br/>(Hedera EVM Chain 296)"]
+    end
 
-== 2. Payment & zkTLS Request Phase ==
-ClientService -> ServerAgent: GET /api/protected/verified/gemini?prompt=hello
-ServerAgent --> ClientService: HTTP 402 Payment Required
-ClientService -> PaymentService: createSignedPaymentHeader(requirement, overpayment)
-PaymentService --> ClientService: X-PAYMENT Base64 Header Payload
-
-ClientService -> ServerAgent: zkFetch GET (with X-PAYMENT Header)
-ServerAgent --> ClientService: Response Payload (output, zkProof, signature, refundDetails)
-
-== 3. Offline Cryptographic Verification & Financial Audit Phase ==
-ClientService -> VerifierUtils: unwrapProof(zkProof)
-VerifierUtils --> ClientService: Unwrapped Proof
-ClientService -> VerifierUtils: verifyProofOffline(proof)
-VerifierUtils -> VerifierUtils: Reconstruct canonical string & verify witness signatures
-VerifierUtils --> ClientService: (isValid = true, signers)
-
-ClientService -> VerifierUtils: verifyRefundAccounting(metrics, refundDetails, paidTinybars)
-VerifierUtils --> ClientService: Audit Result (isMathCorrect = true, checks)
-
-== 4. On-Chain Validation & Slashing Phase ==
-ClientService -> VerifierUtils: transformProofForSolidity(zkProof)
-VerifierUtils --> ClientService: Formatted Reclaim.Proof Tuple Struct
-ClientService -> ValidatorContract: validateUsage(tokenId, agentSignature, formattedProof)
-ValidatorContract -> ValidatorContract: Cryptographic Witness Check & Endpoint Comparison
-alt Fraud / Mismatch Detected
-    ValidatorContract -> ValidatorContract: Slash Agent Trust Score on Reputation Contract
-end
-ValidatorContract --> ClientService: Transaction Receipt (actualTokensUsed, slashed)
-ClientService --> User: Stream Verified Response & Audit Summary
-@enduml
+    User -->|1. Prompt Input| Main
+    Main -->|2. processUserPrompt(prompt)| ClientSvc
+    ClientSvc -->|3. fetchHcsAgentCards()| HCSDisc
+    HCSDisc -->|GET /topics/messages| Mirror
+    ClientSvc -->|4. Initial GET Request| Server
+    Server -->|HTTP 402 Challenge| ClientSvc
+    ClientSvc -->|5. createSignedPaymentHeader()| PaymentSvc
+    ClientSvc -->|6. GET with X-PAYMENT Header via zkFetch| Server
+    Server -->|Response + zkTLS Proof + Refund| ClientSvc
+    ClientSvc -->|7. Offline Witness Check & Refund Audit| VerifierUtils
+    ClientSvc -->|8. validateUsage(tokenId, sig, proof)| ValidatorContract
+    ClientSvc -->|9. SSE Event Stream Progress| User
 ```
