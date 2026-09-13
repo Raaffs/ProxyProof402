@@ -51,16 +51,16 @@ graph LR
         HederaNet["Hedera Testnet Node"]
     end
 
-    Client -->|1. GET /api/protected/verified/gemini?prompt=...| Controller
-    Controller -->|2. HTTP 402 Payment Required Challenge| Client
-    Client -->|3. GET Request with Base64 X-PAYMENT Header| Controller
-    Controller -->|4. settlePayment(paymentPayload)| FacilitatorSvc
-    FacilitatorSvc -->|POST /settle| Facilitator
-    Controller -->|5. fetchWithZkProof(prompt)| GeminiSvc
-    GeminiSvc -->|zkFetch POST (Redacts x-goog-api-key)| GeminiAPI
-    GeminiAPI -->|HTTP Body + zkTLS Proof| GeminiSvc
-    Controller -->|6. Calculate actual cost & refund| HederaSvc
-    HederaSvc -->|Execute TransferTransaction| HederaNet
-    Controller -->|7. Sign response tokenId| SignUtil
-    Controller -->|8. HTTP 200 OK (text, zkProof, refundDetails)| Client
+    Client -->|"1. GET /api/protected/verified/gemini?prompt=..."| Controller
+    Controller -->|"2. HTTP 402 Payment Required Challenge"| Client
+    Client -->|"3. GET Request with Base64 X-PAYMENT Header"| Controller
+    Controller -->|"4. settlePayment(paymentPayload)"| FacilitatorSvc
+    FacilitatorSvc -->|"POST /settle"| Facilitator
+    Controller -->|"5. fetchWithZkProof(prompt)"| GeminiSvc
+    GeminiSvc -->|"zkFetch POST (Redacts x-goog-api-key)"| GeminiAPI
+    GeminiAPI -->|"HTTP Body + zkTLS Proof"| GeminiSvc
+    Controller -->|"6. Calculate actual cost & refund"| HederaSvc
+    HederaSvc -->|"Execute TransferTransaction"| HederaNet
+    Controller -->|"7. Sign response tokenId"| SignUtil
+    Controller -->|"8. HTTP 200 OK (text, zkProof, refundDetails)"| Client
 ```
