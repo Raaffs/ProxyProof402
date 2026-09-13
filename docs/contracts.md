@@ -63,15 +63,17 @@ graph TD
         Rep["Reputation.sol<br/>• deductAndTransferPoint(agentId, client)<br/>• payAgentWithPoints(receivingAgentId, amount)<br/>• agentTrustPoints(agentId): uint256"]
     end
 
-    Owner["Human Owner"] -->|registerHuman()| HR
-    Owner -->|registerAgent() + signature| AIR
-    AIR -->|Check isHuman(msg.sender)| HR
+    HumanOwner["Human Owner"]
+    ClientAccount["Client Account / Agent"]
 
-    Client["Client Account / Agent"] -->|validateUsage(tokenId, sig, proof)| AUV
-    AUV -->|verifyAgentKey(tokenId, opKey)| AIR
-    AUV -->|getAgentThirdPartyEndpoint(tokenId)| AIR
-    AUV -->|verifyProof(proof)| Reclaim
-    AUV -->|If URL mismatch: deductAndTransferPoint()| Rep
-    Rep -->|Check ownerOf(agentId)| AIR
-    Client -->|payAgentWithPoints()| Rep
-```
+    HumanOwner -->|"registerHuman()"| HR
+    HumanOwner -->|"registerAgent() + signature"| AIR
+    AIR -->|"Check isHuman(msg.sender)"| HR
+
+    ClientAccount -->|"validateUsage(tokenId, sig, proof)"| AUV
+    AUV -->|"verifyAgentKey(tokenId, opKey)"| AIR
+    AUV -->|"getAgentThirdPartyEndpoint(tokenId)"| AIR
+    AUV -->|"verifyProof(proof)"| Reclaim
+    AUV -->|"If URL mismatch: deductAndTransferPoint()"| Rep
+    Rep -->|"Check ownerOf(agentId)"| AIR
+    ClientAccount -->|"payAgentWithPoints()"| Rep```
