@@ -53,16 +53,16 @@ graph TD
         ValidatorContract["AgentUsageValidator.sol<br/>(Hedera EVM Chain 296)"]
     end
 
-    User -->|1. Prompt Input| Main
-    Main -->|2. processUserPrompt(prompt)| ClientSvc
-    ClientSvc -->|3. fetchHcsAgentCards()| HCSDisc
-    HCSDisc -->|GET /topics/messages| Mirror
-    ClientSvc -->|4. Initial GET Request| Server
-    Server -->|HTTP 402 Challenge| ClientSvc
-    ClientSvc -->|5. createSignedPaymentHeader()| PaymentSvc
-    ClientSvc -->|6. GET with X-PAYMENT Header via zkFetch| Server
-    Server -->|Response + zkTLS Proof + Refund| ClientSvc
-    ClientSvc -->|7. Offline Witness Check & Refund Audit| VerifierUtils
-    ClientSvc -->|8. validateUsage(tokenId, sig, proof)| ValidatorContract
-    ClientSvc -->|9. SSE Event Stream Progress| User
+    User -->|"1. Prompt Input"| Main
+    Main -->|"2. processUserPrompt(prompt)"| ClientSvc
+    ClientSvc -->|"3. fetchHcsAgentCards()"| HCSDisc
+    HCSDisc -->|"GET /topics/messages"| Mirror
+    ClientSvc -->|"4. Initial GET Request"| Server
+    Server -->|"HTTP 402 Challenge"| ClientSvc
+    ClientSvc -->|"5. createSignedPaymentHeader()"| PaymentSvc
+    ClientSvc -->|"6. GET with X-PAYMENT Header via zkFetch"| Server
+    Server -->|"Response + zkTLS Proof + Refund"| ClientSvc
+    ClientSvc -->|"7. Offline Witness Check & Refund Audit"| VerifierUtils
+    ClientSvc -->|"8. validateUsage(tokenId, sig, proof)"| ValidatorContract
+    ClientSvc -->|"9. SSE Event Stream Progress"| User
 ```
