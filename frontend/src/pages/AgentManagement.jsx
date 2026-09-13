@@ -15,7 +15,8 @@ import {
   Stack,
   IconButton,
   InputAdornment,
-  CircularProgress
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import AddIcon from '@mui/icons-material/Add';
@@ -28,14 +29,19 @@ import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import KeyIcon from '@mui/icons-material/Key';
 import LinkIcon from '@mui/icons-material/Link';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import TagIcon from '@mui/icons-material/Tag';
+import HubIcon from '@mui/icons-material/Hub';
 import { ethers } from 'ethers';
+import Header from '../components/Header';
 
 const BACKEND_URL = "http://localhost:5000/api/agents";
 const CONTRACT_ADDRESS = "0x6D0e102f25391Cd2778839a80E90c8C88FC0B2F1";
-const HEDERA_TESTNET_CHAIN_ID = "0x128";
+const HEDERA_TESTNET_CHAIN_ID = "0x128"; // 296 in decimal
+const HCS_TOPIC_ID = "0.0.10402297";
 
 const AgentRegistryABI = [
-  "function registerAgent(address operationalKey, string uri, string thirdpartyEndpoint, bytes signature, uint128 tinyHbarRate) external returns (uint256)"
+  "function registerAgent(address operationalKey, string uri, string thirdpartyEndpoint, bytes signature, uint128 tinyHbarRate) external returns (uint256)",
+  "event AgentRegistered(uint256 indexed tokenId, address indexed owner, address operationalKey, string uri, string thirdpartyEndpoint)"
 ];
 
 async function switchToHederaTestnet() {
@@ -65,6 +71,22 @@ async function switchToHederaTestnet() {
   }
 }
 
+// Backend call to derive the native 0.0.xxxxx Account ID using agent private key
+async function deriveHederaAccountId(privateKey) {
+  try {
+    const res = await fetch("http://localhost:5000/api/agents/derive-account", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ privateKey })
+    });
+    const data = await res.json();
+    return data.accountId || "0.0.000000";
+  } catch (err) {
+    console.error("Failed to derive Hedera Account ID via backend:", err);
+    return "0.0.000000";
+  }
+}
+
 export default function AgentManagementPage() {
   const [agents, setAgents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,11 +95,20 @@ export default function AgentManagementPage() {
   const [openTransfer, setOpenTransfer] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [loadingDeployId, setLoadingDeployId] = useState(null);
+
+  // HCS Registration Dialog State
+  const [openHcsModal, setOpenHcsModal] = useState(false);
+  const [hcsPayload, setHcsPayload] = useState('');
+  const [isSubmittingHcs, setIsSubmittingHcs] = useState(false);
+  const [hcsTags, setHcsTags] = useState('60101, 60201, 90101');
+  const [hcsMemo, setHcsMemo] = useState('Agent Registration via Fleet Manager');
+  const [hcsDescription, setHcsDescription] = useState('Autonomous AI Agent on Hedera');
   
   // Modal Form State
   const [agentName, setAgentName] = useState('');
   const [apiHost, setApiHost] = useState('http://localhost');
   const [apiPort, setApiPort] = useState('8080');
+  const [thirdPartyEndpointUrl, setThirdPartyEndpointUrl] = useState('https://my-agent-service.com/api');
   const [agentPrivateKey, setAgentPrivateKey] = useState('');
   const [tokenURI, setTokenURI] = useState('https://api.example.com/agent.json');
   const [tinyHbarRate, setTinyHbarRate] = useState('100000000');
@@ -117,6 +148,7 @@ export default function AgentManagementPage() {
       id: Date.now().toString(),
       name: agentName,
       endpoint: endpoint,
+      thirdpartyEndpoint: thirdPartyEndpointUrl,
       hbar: 0.0,
       status: 'Idle',
       deployed: false,
@@ -137,7 +169,7 @@ export default function AgentManagementPage() {
 
       await fetchAgents();
 
-      const envOutput = `AGENT_PRIVATE_KEY=${agentPrivateKey}\nAGENT_OPERATIONAL_KEY=${derivedAddress}\nAGENT_ENDPOINT=${endpoint}\nAGENT_URI=${tokenURI}\nAGENT_RATE=${tinyHbarRate}`;
+      const envOutput = `AGENT_PRIVATE_KEY=${agentPrivateKey}\nAGENT_OPERATIONAL_KEY=${derivedAddress}\nAGENT_ENDPOINT=${endpoint}\nAGENT_THIRDPARTY_ENDPOINT=${thirdPartyEndpointUrl}\nAGENT_URI=${tokenURI}\nAGENT_RATE=${tinyHbarRate}`;
       if (navigator.clipboard) {
         navigator.clipboard.writeText(envOutput);
         alert("Agent saved to config.json! Configuration copied to clipboard.");
@@ -149,10 +181,41 @@ export default function AgentManagementPage() {
     setAgentName('');
     setApiHost('http://localhost');
     setApiPort('8080');
+    setThirdPartyEndpointUrl('https://my-agent-service.com/api');
     setAgentPrivateKey('');
     setTokenURI('https://api.example.com/agent.json');
     setTinyHbarRate('100000000');
     setOpenAdd(false);
+  };
+
+  const buildHcsPayload = (agent, tokenId, accountId, tagsStr, descriptionStr, memoStr) => {
+    const parsedTags = tagsStr
+      .split(',')
+      .map((t) => parseInt(t.trim(), 10))
+      .filter((n) => !isNaN(n));
+
+    const payloadObj = {
+      p: "hcs-26",
+      op: "register",
+      t_id: HCS_TOPIC_ID,
+      account_id: accountId,
+      metadata: {
+        name: agent.name,
+        description: descriptionStr,
+        tags: parsedTags.length > 0 ? parsedTags : [60101, 60201, 90101],
+        thirdPartyUri: agent.thirdpartyEndpoint || agent.endpoint,
+        identity: {
+          standard: "ERC-8004",
+          uaid: `eip155:296:${CONTRACT_ADDRESS.toLowerCase()}:${tokenId}`,
+          chain_id: "eip155:296",
+          contract: CONTRACT_ADDRESS.toLowerCase(),
+          token_id: String(tokenId)
+        }
+      },
+      m: memoStr
+    };
+
+    return JSON.stringify(payloadObj, null, 2);
   };
 
   const handleDeployAgent = async (agent) => {
@@ -179,9 +242,11 @@ export default function AgentManagementPage() {
       const agentWallet = new ethers.Wallet(agent.privateKey);
       const operationalKeyAddress = agentWallet.address;
 
+      const effectiveThirdpartyEndpoint = agent.thirdpartyEndpoint || agent.endpoint;
+
       const packedHash = ethers.solidityPackedKeccak256(
         ["address", "string", "string"],
-        [humanAddress, agent.uri, agent.endpoint]
+        [humanAddress, agent.uri, effectiveThirdpartyEndpoint]
       );
 
       const agentSignature = await agentWallet.signMessage(ethers.getBytes(packedHash));
@@ -191,25 +256,59 @@ export default function AgentManagementPage() {
       const tx = await contract.registerAgent(
         operationalKeyAddress,
         agent.uri,
-        agent.endpoint,
+        effectiveThirdpartyEndpoint,
         agentSignature,
         BigInt(agent.rate)
       );
 
-      await tx.wait();
+      const receipt = await tx.wait();
 
+      // Extract tokenId from AgentRegistered Event
+      let mintedTokenId = "0";
+      if (receipt && receipt.logs) {
+        for (const log of receipt.logs) {
+          try {
+            const parsedLog = contract.interface.parseLog(log);
+            if (parsedLog && parsedLog.name === "AgentRegistered") {
+              mintedTokenId = parsedLog.args.tokenId.toString();
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Update agent status in backend
       await fetch(`${BACKEND_URL}/${agent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deployed: true,
           status: 'Active',
-          operationalKey: operationalKeyAddress
+          operationalKey: operationalKeyAddress,
+          tokenId: mintedTokenId
         })
       });
 
       await fetchAgents();
-      alert(`Agent registered on Hedera Testnet!\nTx Hash: ${tx.hash}`);
+
+      // Derive Account ID via backend using the agent private key
+      const derivedAccountId = await deriveHederaAccountId(agent.privateKey);
+
+      setSelectedAgent({ ...agent, tokenId: mintedTokenId, accountId: derivedAccountId });
+
+      // Build JSON payload for HCS
+      const initialJson = buildHcsPayload(
+        agent,
+        mintedTokenId,
+        derivedAccountId,
+        hcsTags,
+        hcsDescription,
+        hcsMemo
+      );
+
+      setHcsPayload(initialJson);
+      setOpenHcsModal(true);
+
     } catch (error) {
       console.error("Deployment failed:", error);
       alert(`Deployment Failed: ${error.reason || error.message}`);
@@ -218,8 +317,57 @@ export default function AgentManagementPage() {
     }
   };
 
+  const handlePublishHcsMessage = async () => {
+    setIsSubmittingHcs(true);
+    try {
+      let parsedMessage;
+      try {
+        parsedMessage = JSON.parse(hcsPayload);
+      } catch (err) {
+        throw new Error("Invalid JSON format in payload field.");
+      }
+
+      const response = await fetch("http://localhost:5000/api/hcs/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topicId: HCS_TOPIC_ID,
+          message: parsedMessage
+        })
+      });
+
+      if (!response.ok) {
+        const errorRes = await response.json();
+        throw new Error(errorRes.message || "Failed to post message to HCS Topic");
+      }
+
+      const result = await response.json();
+      alert(`Successfully published Agent Skills to Hedera HCS Topic ${HCS_TOPIC_ID}!\nSequence Number: ${result.sequenceNumber}`);
+      setOpenHcsModal(false);
+    } catch (err) {
+      console.error("HCS Submit Error:", err);
+      alert(`HCS Submission Error: ${err.message}`);
+    } finally {
+      setIsSubmittingHcs(false);
+    }
+  };
+
+  const handleHcsFormChange = (newTags, newDesc, newMemo) => {
+    if (!selectedAgent) return;
+    const updatedPayload = buildHcsPayload(
+      selectedAgent,
+      selectedAgent.tokenId || "1",
+      selectedAgent.accountId || "0.0.000000",
+      newTags,
+      newDesc,
+      newMemo
+    );
+    setHcsPayload(updatedPayload);
+  };
+
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#060d17', color: '#fff', py: 5 }}>
+      <Header />
       <Container maxWidth="lg">
         
         {/* Header */}
@@ -420,6 +568,19 @@ export default function AgentManagementPage() {
               </Grid>
 
               <Box>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>THIRD-PARTY ENDPOINT URL</Typography>
+                <TextField 
+                  fullWidth 
+                  placeholder="https://my-agent-service.com/api" 
+                  variant="outlined" 
+                  value={thirdPartyEndpointUrl} 
+                  onChange={(e) => setThirdPartyEndpointUrl(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start"><LinkIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} /></InputAdornment> }}
+                  sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
+                />
+              </Box>
+
+              <Box>
                 <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>METADATA URI</Typography>
                 <TextField 
                   fullWidth 
@@ -489,6 +650,124 @@ export default function AgentManagementPage() {
           <DialogActions sx={{ p: 2.5 }}>
             <Button onClick={() => setOpenTransfer(false)} sx={{ color: '#94a3b8' }}>Cancel</Button>
             <Button variant="contained" onClick={() => setOpenTransfer(false)} sx={{ bgcolor: '#00e5ff', color: '#000', fontWeight: 700 }}>Send</Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Modal: HCS Topic Skills Registration */}
+        <Dialog 
+          open={openHcsModal} 
+          onClose={() => setOpenHcsModal(false)}
+          PaperProps={{ 
+            sx: { 
+              bgcolor: '#0a1929', 
+              color: '#fff', 
+              border: '1px solid rgba(0, 229, 255, 0.4)', 
+              borderRadius: 3, 
+              maxWidth: 650, 
+              width: '100%' 
+            } 
+          }}
+        >
+          <DialogTitle sx={{ p: 3, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <HubIcon sx={{ color: '#00e5ff' }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff' }}>
+                Publish Agent Skills to HCS
+              </Typography>
+            </Box>
+            <IconButton onClick={() => setOpenHcsModal(false)} sx={{ color: '#64748b' }}><CloseIcon /></IconButton>
+          </DialogTitle>
+
+          <DialogContent sx={{ p: 3 }}>
+            <Stack spacing={2}>
+              <Alert severity="success" sx={{ bgcolor: 'rgba(76, 175, 80, 0.1)', color: '#4caf50', border: '1px solid rgba(76, 175, 80, 0.3)' }}>
+                Contract Minted Successfully! Token ID: <strong>#{selectedAgent?.tokenId || "1"}</strong> | Account ID: <strong>{selectedAgent?.accountId || "0.0.000000"}</strong>
+              </Alert>
+
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                Post agent metadata and skills to Hedera Consensus Topic: <code>{HCS_TOPIC_ID}</code> (hcs-26 standard format).
+              </Typography>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>TAGS (Comma separated)</Typography>
+                  <TextField 
+                    fullWidth 
+                    variant="outlined" 
+                    value={hcsTags} 
+                    onChange={(e) => {
+                      setHcsTags(e.target.value);
+                      handleHcsFormChange(e.target.value, hcsDescription, hcsMemo);
+                    }}
+                    InputProps={{ startAdornment: <InputAdornment position="start"><TagIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 18 }} /></InputAdornment> }}
+                    sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>MEMO</Typography>
+                  <TextField 
+                    fullWidth 
+                    variant="outlined" 
+                    value={hcsMemo} 
+                    onChange={(e) => {
+                      setHcsMemo(e.target.value);
+                      handleHcsFormChange(hcsTags, hcsDescription, e.target.value);
+                    }}
+                    sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
+                  />
+                </Grid>
+              </Grid>
+
+              <Box>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>DESCRIPTION</Typography>
+                <TextField 
+                  fullWidth 
+                  variant="outlined" 
+                  value={hcsDescription} 
+                  onChange={(e) => {
+                    setHcsDescription(e.target.value);
+                    handleHcsFormChange(hcsTags, e.target.value, hcsMemo);
+                  }}
+                  sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
+                />
+              </Box>
+
+              <Box>
+                <Typography variant="caption" sx={{ color: '#00e5ff', fontWeight: 700, mb: 0.5, display: 'block', fontFamily: 'monospace' }}>
+                  HCS-26 PAYLOAD PREVIEW
+                </Typography>
+                <TextField 
+                  fullWidth 
+                  multiline 
+                  rows={10} 
+                  value={hcsPayload} 
+                  onChange={(e) => setHcsPayload(e.target.value)}
+                  sx={{ 
+                    '& .MuiOutlinedInput-root': { 
+                      color: '#4caf50', 
+                      fontFamily: 'monospace', 
+                      fontSize: '0.8rem', 
+                      bgcolor: '#03080f', 
+                      borderRadius: 2,
+                      border: '1px solid rgba(0, 229, 255, 0.2)'
+                    } 
+                  }}
+                />
+              </Box>
+            </Stack>
+          </DialogContent>
+
+          <DialogActions sx={{ p: 3, pt: 0 }}>
+            <Button onClick={() => setOpenHcsModal(false)} sx={{ color: '#94a3b8' }}>Skip</Button>
+            <Button 
+              variant="contained" 
+              onClick={handlePublishHcsMessage}
+              disabled={isSubmittingHcs}
+              startIcon={isSubmittingHcs ? <CircularProgress size={18} color="inherit" /> : <SendIcon />}
+              sx={{ bgcolor: '#00e5ff', color: '#060d17', fontWeight: 700, '&:hover': { bgcolor: '#00b2cc' } }}
+            >
+              {isSubmittingHcs ? "Publishing..." : "Submit to Hedera HCS"}
+            </Button>
           </DialogActions>
         </Dialog>
 

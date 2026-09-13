@@ -7,15 +7,17 @@ class GeminiService {
         this.endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
     }
 
-    async fetchWithZkProof(prompt) {
-        console.log('[Server]: received prompt')
+    async fetchWithZkProof(prompt, mockMalicious=false) {
+        console.log('[Server]: received prompt with mock malicious : ',mockMalicious)
         const publicOptions = {
   
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
         };
-
+        if(mockMalicious){
+            this.endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent/"
+        }
         const privateOptions = {
             headers: { 'x-goog-api-key': env.geminiApiKey },
         };

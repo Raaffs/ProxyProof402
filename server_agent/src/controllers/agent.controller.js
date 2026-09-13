@@ -1,7 +1,7 @@
 const facilitatorService = require('../services/facilitator.service.js');
 const hederaService = require('../services/hedera.service.js');
 const geminiService = require('../services/gemini.service.js');
-const signTokenId =  require('../utils/sign')
+const signTokenId = require('../utils/sign');
 const env = require('../config/env.js');
 
 class AgentController {
@@ -26,7 +26,6 @@ class AgentController {
 
         const config = providerConfigs[provider.toLowerCase()] || providerConfigs.gemini;
 
-        // Allow explicit override via headers if passed directly by client/caller
         return {
             accountId: req.headers['x-agent-id'] || config.accountId,
             privateKey: req.headers['x-agent-key'] || config.privateKey,
@@ -35,7 +34,6 @@ class AgentController {
     }
 
     async handlePaymentCheck(req, res, agentAccountId) {
-        // Pass the agent's account ID so the 402 challenge specifies paying THIS agent
         const paymentRequirements = await facilitatorService.buildRequirements(agentAccountId);
         const xPayment = req.headers['x-payment'];
 
@@ -76,19 +74,24 @@ class AgentController {
 
     getGeminiVerified = async (req, res) => {
         try {
-            console.log('[Server] : hellooo')
+            console.log('[Server] : hellooo');
             const agentCreds = this.getAgentCredentials('gemini', req);
-            console.log('[Server] : hiii')
+            console.log('[Server] : hiii');
 
             const paymentState = await this.handlePaymentCheck(req, res, agentCreds.accountId);
             if (!paymentState) return;
 
-            const prompt = req.query.prompt || 'hello';
-            console.log(`[Server] Executing zkTLS Gemini call for: "${prompt}"`);
+            const rawPrompt = req.query.prompt || 'hello';
 
-            const zkProof = await geminiService.fetchWithZkProof(prompt);
-            
-            const { text, totalTokenCount } = geminiService.extractGeminiMetrics(zkProof);
+            // DEMO MOCK DETECTOR: Check if input contains 'invalid'
+            const isMaliciousTrigger = rawPrompt.toLowerCase().includes('invalid');
+            const cleanPrompt = rawPrompt.replace(/invalid/gi, '').trim() || 'hello';
+
+            console.log(`[Server] Executing zkTLS Gemini call for clean prompt: "${cleanPrompt}"`);
+
+            const zkProof = await geminiService.fetchWithZkProof(cleanPrompt,isMaliciousTrigger);
+
+            let { text, totalTokenCount } = geminiService.extractGeminiMetrics(zkProof);
             console.log(`[Server] : init refund `);
             const refundDetails = await hederaService.processRefundIfOverpaid({
                 signerAccountId: agentCreds.accountId,
@@ -99,8 +102,9 @@ class AgentController {
                 tokenRateTinybars: agentCreds.tokenRateTinybars,
             });
 
-            const { signature, signerAddress } = await signTokenId(5, env.OPERATOR_PRIVATE_KEY);
-            console.log('[Server]: refund done ')
+            const { signature, signerAddress } = await signTokenId(15, env.SAMPLE_VALID_AGENT_KEY);
+            console.log('[Server]: refund done ');
+
             res.json({
                 status: 'success',
                 provider: 'gemini',
@@ -111,7 +115,7 @@ class AgentController {
                 output: text,
                 tokensUsed: totalTokenCount,
                 zkProof: zkProof,
-                tokenId: 5,
+                tokenId: 15,
                 signature: signature,
                 refundDetails: refundDetails,
             });

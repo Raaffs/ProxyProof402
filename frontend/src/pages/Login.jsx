@@ -8,7 +8,8 @@ import {
   CircularProgress, 
   Grid, 
   Chip, 
-  Container 
+  Container,
+  Alert
 } from '@mui/material';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
@@ -16,16 +17,103 @@ import SecurityIcon from '@mui/icons-material/Security';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange';
 
+import { IDKit, orbLegacy } from '@worldcoin/idkit-core';
+import QRCode from 'qrcode';
+
+// Vite environment variables
+const WORLD_APP_ID = import.meta.env.VITE_WORLD_APP_ID;
+const WORLD_RP_ID = import.meta.env.VITE_WORLD_RP_ID;
+
 export default function Login() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+  const [connectUri, setConnectUri] = useState('');
+  const [statusText, setStatusText] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleScan = () => {
+  const handleStartVerification = async () => {
+    if (!WORLD_APP_ID || !WORLD_RP_ID) {
+      setErrorMsg('Missing VITE_WORLD_APP_ID or VITE_WORLD_RP_ID in frontend .env file.');
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
+    setErrorMsg('');
+    setQrUrl('');
+    setConnectUri('');
+    setStatusText('Requesting RP signature from server...');
+
+    const action = 'demo-action';
+
+    try {
+      // 1. Request signature from backend
+      const sigRes = await fetch('http://localhost:5000/api/rp-signature', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+
+      const sig = await sigRes.json();
+      if (!sigRes.ok) throw new Error(sig.error || 'Failed to get RP signature');
+
+      const rp_context = {
+        rp_id: WORLD_RP_ID,
+        nonce: sig.nonce,
+        created_at: sig.created_at,
+        expires_at: sig.expires_at,
+        signature: sig.sig,
+      };
+
+      // 2. Build IDKit request with Sandbox environment
+      const request = await IDKit.request({
+        app_id: WORLD_APP_ID,
+        action,
+        rp_context,
+        allow_legacy_proofs: true,
+        environment: 'sandbox',
+      }).preset(orbLegacy());
+
+      // 3. Render QR Code for mobile scanning / deep linking
+      const uri = request.connectorURI;
+      setConnectUri(uri);
+      const generatedQrSvg = await QRCode.toDataURL(uri, { width: 220, margin: 2 });
+      setQrUrl(generatedQrSvg);
+
+      setStatusText('Scan QR with your World ID Sandbox App...');
+
+      // 4. Poll bridge until proof is signed in app
+      const outcome = await request.pollUntilCompletion();
+
+      if (!outcome.success) {
+        throw new Error('Verification cancelled or failed: ' + outcome.error);
+      }
+
+      setStatusText('Proof received! Verifying on backend...');
+
+      // 5. Send proof to backend for verification
+      const verifyRes = await fetch('http://localhost:5000/api/verify-proof', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, idkitResponse: outcome.result }),
+      });
+
+      const verifyBody = await verifyRes.json();
+      if (!verifyRes.ok) {
+        throw new Error(verifyBody.error || 'Verification failed on server');
+      }
+
+      setStatusText('Verification successful! Redirecting...');
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1000);
+
+    } catch (err) {
+      setErrorMsg(err.message || String(err));
+      setStatusText('');
+    } finally {
       setLoading(false);
-      navigate('/dashboard');
-    }, 1500);
+    }
   };
 
   return (
@@ -42,8 +130,7 @@ export default function Login() {
         py: 6
       }}
     >
-      {/* --- BACKGROUND ANIMATIONS & GLOWS --- */}
-      {/* Glowing Orb 1 */}
+      {/* Background Glows */}
       <Box 
         sx={{ 
           position: 'absolute', 
@@ -58,7 +145,6 @@ export default function Login() {
         }} 
       />
 
-      {/* Glowing Orb 2 */}
       <Box 
         sx={{ 
           position: 'absolute', 
@@ -73,7 +159,7 @@ export default function Login() {
         }} 
       />
 
-      {/* CSS Floating Particles & Animated Bots */}
+      {/* Floating Bots */}
       <Box 
         sx={{ 
           position: 'absolute', 
@@ -91,22 +177,22 @@ export default function Login() {
           }
         }}
       >
-        <SmartToyIcon className="floating-bot" sx={{ top: '15%', left: '10%', fontSize: 40, animationDelay: '0s !important' }} />
-        <SmartToyIcon className="floating-bot" sx={{ top: '65%', left: '80%', fontSize: 50, animationDelay: '2s !important' }} />
-        <SmartToyIcon className="floating-bot" sx={{ top: '75%', left: '15%', fontSize: 35, animationDelay: '4s !important' }} />
-        <SmartToyIcon className="floating-bot" sx={{ top: '20%', left: '85%', fontSize: 45, animationDelay: '1s !important' }} />
+        <SmartToyIcon className="floating-bot" sx={{ top: '15%', left: '10%', fontSize: 40 }} />
+        <SmartToyIcon className="floating-bot" sx={{ top: '65%', left: '80%', fontSize: 50 }} />
+        <SmartToyIcon className="floating-bot" sx={{ top: '75%', left: '15%', fontSize: 35 }} />
+        <SmartToyIcon className="floating-bot" sx={{ top: '20%', left: '85%', fontSize: 45 }} />
       </Box>
 
-      {/* --- MAIN CONTAINER --- */}
+      {/* MAIN CONTAINER */}
       <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
         <Grid container spacing={6} alignItems="center">
           
-          {/* LEFT COLUMN: Hero Description & Crypto Buzzwords */}
+          {/* LEFT COLUMN */}
           <Grid item xs={12} md={7}>
             <Box sx={{ mb: 2 }}>
               <Chip 
                 icon={<VerifiedUserIcon sx={{ fontSize: '16px !important' }} />} 
-                label="Hedera x402 + Reclaim zkTLS Escrow" 
+                label="Hedera x402 using blocky402 + Reclaim zkTLS" 
                 color="primary" 
                 variant="outlined" 
                 sx={{ borderRadius: 2, bgcolor: 'rgba(0, 229, 255, 0.05)', borderColor: 'rgba(0, 229, 255, 0.3)' }}
@@ -133,7 +219,6 @@ export default function Login() {
               Verifiable, zero-knowledge AI proxy infrastructure. Clients pay-per-token via Hedera x402 micropayments while proving exact model signatures, token counts, and provider responses on-chain.
             </Typography>
 
-            {/* Feature Cards Grid */}
             <Grid container spacing={2}>
               <Grid item xs={12} sm={4}>
                 <Box sx={{ p: 2, bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2, border: '1px solid rgba(0, 229, 255, 0.15)' }}>
@@ -147,7 +232,7 @@ export default function Login() {
                 <Box sx={{ p: 2, bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2, border: '1px solid rgba(0, 229, 255, 0.15)' }}>
                   <CurrencyExchangeIcon sx={{ color: '#00e5ff', mb: 1 }} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#fff' }}>x402 Micropayments</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Automated escrow and settlement built natively on Hedera.</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>Automated zk-based reputation score built natively on Hedera.</Typography>
                 </Box>
               </Grid>
 
@@ -161,7 +246,7 @@ export default function Login() {
             </Grid>
           </Grid>
 
-          {/* RIGHT COLUMN: Glassmorphic World ID Login Card */}
+          {/* RIGHT COLUMN: World ID Login Card */}
           <Grid item xs={12} md={5}>
             <Card 
               elevation={0}
@@ -184,13 +269,19 @@ export default function Login() {
               </Typography>
               
               <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
-                Scan with World App to perform a human selfie check and authenticate your agent owner session.
+                Scan with World App (Sandbox) to perform a human check and authenticate your session.
               </Typography>
 
-              {/* Styled Mock QR Code Frame */}
+              {errorMsg && (
+                <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(248, 113, 113, 0.1)', color: '#f87171' }}>
+                  {errorMsg}
+                </Alert>
+              )}
+
+              {/* Dynamic QR Display */}
               <Box 
                 sx={{ 
-                  p: 3, 
+                  p: 2, 
                   bgcolor: '#000', 
                   borderRadius: 3, 
                   mb: 3, 
@@ -199,19 +290,36 @@ export default function Login() {
                   flexDirection: 'column', 
                   alignItems: 'center', 
                   justifyContent: 'center',
+                  minHeight: 220,
                   boxShadow: '0 0 20px rgba(0, 229, 255, 0.2)'
                 }}
               >
-                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#00e5ff', letterSpacing: 2 }}>
-                  [ WORLD ID SCANNER ]
-                </Typography>
+                {qrUrl ? (
+                  <img src={qrUrl} alt="World ID QR Code" style={{ borderRadius: 8 }} />
+                ) : (
+                  <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#00e5ff', letterSpacing: 2 }}>
+                    [ WORLD ID SCANNER ]
+                  </Typography>
+                )}
               </Box>
+
+              {statusText && (
+                <Typography variant="caption" sx={{ display: 'block', color: '#00e5ff', mb: 2 }}>
+                  {statusText}
+                </Typography>
+              )}
+
+              {connectUri && (
+                <Typography variant="caption" sx={{ display: 'block', color: '#94a3b8', mb: 2 }}>
+                  Mobile testing? <a href={connectUri} target="_blank" rel="noopener noreferrer" style={{ color: '#00e5ff' }}>Tap here to open Sandbox App</a>
+                </Typography>
+              )}
 
               <Button 
                 variant="contained" 
                 fullWidth 
                 size="large"
-                onClick={handleScan}
+                onClick={handleStartVerification}
                 disabled={loading}
                 sx={{ 
                   py: 1.5, 
@@ -222,7 +330,7 @@ export default function Login() {
                   boxShadow: '0 0 15px rgba(0, 229, 255, 0.4)'
                 }}
               >
-                {loading ? <CircularProgress size={26} sx={{ color: '#060d17' }} /> : 'Simulate Phone Scan'}
+                {loading ? <CircularProgress size={26} sx={{ color: '#060d17' }} /> : 'Verify with World ID'}
               </Button>
             </Card>
           </Grid>

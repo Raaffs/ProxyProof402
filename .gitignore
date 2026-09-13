@@ -6,6 +6,8 @@ cache
 out
 node_modules/
 proofs/*
+client_agent/src/config.json
+quick_test/*
 # Created by https://www.toptal.com/developers/gitignore/api/go,python,visualstudiocode,node,react,solidity
 # Edit at https://www.toptal.com/developers/gitignore?templates=go,python,visualstudiocode,node,react,solidity
 

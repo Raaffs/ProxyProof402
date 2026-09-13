@@ -18,6 +18,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import HubIcon from '@mui/icons-material/Hub';
 import LockIcon from '@mui/icons-material/Lock';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 // Base URL for API calls. Uses VITE_API_URL if set, otherwise defaults to localhost:5000
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -214,40 +215,110 @@ export default function Terminal({ provider }) {
           </Box>
         )}
 
-        {/* STEP 3: FINAL TRANSACTION & OUTPUT CARD APPEARS UPON COMPLETION */}
+        {/* STEP 3: FINAL TRANSACTION & ACCOUNTING AUDIT CARDS */}
         {successData && (
-          <Card
-            sx={{
-              p: 2.5,
-              bgcolor: 'rgba(76, 175, 80, 0.05)',
-              border: '1px solid rgba(76, 175, 80, 0.3)',
-              borderRadius: 2.5
-            }}
-          >
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
-              <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 28 }} />
-              <Box>
-                <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#fff' }}>
-                  STEP 2: Transaction Verified & Escrow Settled
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#4caf50', fontFamily: 'monospace' }}>
-                  Reclaim zkTLS Witness: {successData.zkProofSummary.witness}
-                </Typography>
-              </Box>
-            </Stack>
-
-            <Paper
-              elevation={0}
-              sx={{ p: 2, bgcolor: 'rgba(6, 13, 23, 0.8)', border: '1px solid rgba(0, 229, 255, 0.2)', borderRadius: 2 }}
+          <Stack spacing={2}>
+            {/* TRANSACTION VERIFIED & RESPONSE CARD */}
+            <Card
+              sx={{
+                p: 2.5,
+                bgcolor: 'rgba(76, 175, 80, 0.05)',
+                border: '1px solid rgba(76, 175, 80, 0.3)',
+                borderRadius: 2.5
+              }}
             >
-              <Typography variant="caption" sx={{ color: '#00e5ff', fontWeight: 700, display: 'block', mb: 0.5 }}>
-                AGENT OUTPUT RESPONSE:
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#fff', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
-                {successData.output}
-              </Typography>
-            </Paper>
-          </Card>
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+                <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 28 }} />
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#fff' }}>
+                    STEP 2: Transaction Verified
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#4caf50', fontFamily: 'monospace' }}>
+                    Reclaim zkTLS Witness: {successData.zkProofSummary.witness}
+                  </Typography>
+                </Box>
+              </Stack>
+
+              <Paper
+                elevation={0}
+                sx={{ p: 2, bgcolor: 'rgba(6, 13, 23, 0.8)', border: '1px solid rgba(0, 229, 255, 0.2)', borderRadius: 2 }}
+              >
+                <Typography variant="caption" sx={{ color: '#00e5ff', fontWeight: 700, display: 'block', mb: 0.5 }}>
+                  AGENT OUTPUT RESPONSE:
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#fff', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+                  {successData.output}
+                </Typography>
+              </Paper>
+            </Card>
+
+            {/* ACCOUNTING AUDIT CARD */}
+            {successData.audit && (
+              <Card
+                sx={{
+                  p: 2.5,
+                  bgcolor: 'rgba(0, 229, 255, 0.04)',
+                  border: '1px solid rgba(0, 229, 255, 0.25)',
+                  borderRadius: 2.5
+                }}
+              >
+                <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <ReceiptLongIcon sx={{ color: '#00e5ff', fontSize: 26 }} />
+                    <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#fff' }}>
+                      Accounting Audit
+                    </Typography>
+                  </Stack>
+                  <Chip
+                    label={successData.audit.isMathCorrect ? 'MATCH ✅' : 'MISMATCH ❌'}
+                    size="small"
+                    sx={{
+                      bgcolor: successData.audit.isMathCorrect ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.15)',
+                      color: successData.audit.isMathCorrect ? '#4caf50' : '#f44336',
+                      border: `1px solid ${successData.audit.isMathCorrect ? '#4caf50' : '#f44336'}`,
+                      fontWeight: 700,
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                </Stack>
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={4}>
+                    <Paper elevation={0} sx={{ p: 1.5, bgcolor: 'rgba(6, 13, 23, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 2 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontWeight: 600 }}>
+                        Tokens Used
+                      </Typography>
+                      <Typography variant="body1" sx={{ color: '#fff', fontFamily: 'monospace', fontWeight: 700, mt: 0.5 }}>
+                        {successData.audit.totalTokenCount}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid item xs={12} sm={4}>
+                    <Paper elevation={0} sx={{ p: 1.5, bgcolor: 'rgba(6, 13, 23, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 2 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontWeight: 600 }}>
+                        Expected Cost
+                      </Typography>
+                      <Typography variant="body1" sx={{ color: '#00e5ff', fontFamily: 'monospace', fontWeight: 700, mt: 0.5 }}>
+                        {successData.audit.expectedActualCost} tinybars
+                      </Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid item xs={12} sm={4}>
+                    <Paper elevation={0} sx={{ p: 1.5, bgcolor: 'rgba(6, 13, 23, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 2 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', fontWeight: 600 }}>
+                        Refund Amount
+                      </Typography>
+                      <Typography variant="body1" sx={{ color: '#4caf50', fontFamily: 'monospace', fontWeight: 700, mt: 0.5 }}>
+                        {successData.audit.reportedRefundAmount} tinybars
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              </Card>
+            )}
+          </Stack>
         )}
       </Box>
 

@@ -8,6 +8,7 @@ const {
   verifyRefundAccounting,
   extractGeminiMetrics,
   unwrapProof,
+  triggerOnChainValidation,
 } = require('../utils/verifier.utils.js');
 const fs = require('fs');
 
@@ -146,10 +147,10 @@ class ClientAgentService {
 
       // Unwrap the inner proof (Gemini zkTLS proof) embedded in the server's response
       const innerProof = unwrapProof(responseData.zkProof || zkProof);
-
+      console.log(' proof: ',zkProof)
       // Offline Cryptographic Verification
       const verification = verifyProofOffline(innerProof);
-      notify('log', `✅ Proof Validated: ${verification.isValid ? 'YES' : 'NO'}`);
+      notify('log', `✅ Proof Validated Offline: ${verification.isValid ? 'YES' : 'NO'}`);
       if (verification.signers && verification.signers.length > 0) {
         notify('log', `   Witness Address: ${verification.signers[0]}`);
       }
@@ -174,6 +175,25 @@ class ClientAgentService {
         notify('log', `   Refund Amount: ${auditResult.reportedRefundAmount} tinybars`);
         notify('log', `   Audit Verdict: ${auditResult.isMathCorrect ? 'MATCH ✅' : 'MISMATCH ❌'}`);
       }
+
+        // notify('log', `\n⚠️ Offline verification or accounting check failed! Triggering on-chain validation & slashing...`);
+
+        try {
+          const validatorAddress = "0x2f5c713bb70DBCD6fa63B3c5afEB0fDC3239cD46" ;
+          const signer = hederaPaymentService.getEthersSigner(); // Wallet Signer
+
+          const receipt = await triggerOnChainValidation({
+            contractAddress: validatorAddress,
+            signer: signer,
+            responseData: responseData,
+          });
+
+          notify('log', `⚡ On-chain validateUsage executed! Tx Hash: ${receipt.hash}`);
+        } catch (contractErr) {
+          notify('log', `❌ On-chain validation failed: ${contractErr.message}`);
+          throw contractErr;
+        }
+    
 
       notify('log', `\n💬 [Agent Output Response]:\n${outputText}`);
 

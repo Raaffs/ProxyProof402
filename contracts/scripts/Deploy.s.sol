@@ -2,13 +2,15 @@
 pragma solidity 0.8.20;
 
 import "forge-std/Script.sol";
-import { HumanRegistry } from "../src/human_registry.sol";
-import { AgentIdentityRegistry } from "../src/agent_registry.sol";
 import { Reputation } from "../src/reputation_registry.sol";
 import { AgentUsageValidator } from "../src/validation_registry.sol";
 
 contract DeployScript is Script {
     address constant RECLAIM_ADDRESS = address(0xaE72f9Ab6854965dFEd0fBBD5d6BA1187e512071);
+    
+    // Existing deployed addresses
+    address constant AGENT_REGISTRY_ADDR = 0x6D0e102f25391Cd2778839a80E90c8C88FC0B2F1;
+    address constant REPUTATION_ADDR = 0x5aa4bdb31669C0806d5E64C46baA3B05F0D23020;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envOr(
@@ -18,24 +20,17 @@ contract DeployScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        HumanRegistry humanRegistry = new HumanRegistry();
-        console.log("HumanRegistry deployed at:", address(humanRegistry));
-
-        AgentIdentityRegistry agentRegistry = new AgentIdentityRegistry(address(humanRegistry));
-        console.log("AgentIdentityRegistry deployed at:", address(agentRegistry));
-
-        Reputation reputation = new Reputation(address(agentRegistry));
-        console.log("Reputation deployed at:", address(reputation));
-
+        // 1. Deploy ONLY the new validator using the existing addresses
         AgentUsageValidator validator = new AgentUsageValidator(
             RECLAIM_ADDRESS,
-            address(agentRegistry),
-            address(reputation)
+            AGENT_REGISTRY_ADDR,
+            REPUTATION_ADDR
         );
-        console.log("AgentUsageValidator deployed at:", address(validator));
+        console.log("New AgentUsageValidator deployed at:", address(validator));
 
-        reputation.setVerificationEngine(address(validator));
-        console.log("Verification engine set!");
+        // 2. Point to the existing Reputation contract and update its engine
+        Reputation(REPUTATION_ADDR).setVerificationEngine(address(validator));
+        console.log("Verification engine updated on existing Reputation!");
 
         vm.stopBroadcast();
     }

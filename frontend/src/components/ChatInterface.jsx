@@ -230,7 +230,7 @@ export default function ChatInterface({ provider, onClose, isStandalone = false 
               <Stack direction="row" spacing={1} alignItems="center">
                 <CircularProgress size={14} sx={{ color: '#00e5ff' }} />
                 <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace' }}>
-                  Verifying HTTP 402 Escrow & Streaming Tokens...
+                  Verifying HTTP 402  & Streaming Tokens...
                 </Typography>
               </Stack>
             </Paper>

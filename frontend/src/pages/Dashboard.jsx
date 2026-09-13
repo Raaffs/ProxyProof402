@@ -29,7 +29,7 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleProviderSelect = (provider) => {
-    if (provider.score < 50) {
+    if (provider.score && provider.score < 50) {
       setSelectedProvider(provider);
       setShowRiskModal(true);
     } else {
@@ -40,7 +40,7 @@ export default function Dashboard() {
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#060d17', color: '#fff', pb: 6 }}>
       
-      {/* EXTRACTED HEADER ELEMENT */}
+      {/* HEADER */}
       <Header />
 
       {/* MAIN CONTAINER */}
@@ -66,7 +66,7 @@ export default function Dashboard() {
             <Card sx={{ p: 2.5, bgcolor: 'rgba(10, 25, 41, 0.75)', border: '1px solid rgba(0, 229, 255, 0.15)', borderRadius: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>ACTIVE HBAR ESCROW</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>ACTIVE HBAR</Typography>
                   <Typography variant="h4" sx={{ fontWeight: 800, color: '#00e5ff', mt: 0.5 }}>570.5 <Typography component="span" variant="body2" sx={{ color: '#64748b' }}>HBAR</Typography></Typography>
                 </Box>
                 <Box sx={{ p: 1.5, bgcolor: 'rgba(0, 229, 255, 0.1)', borderRadius: 2 }}>
@@ -105,7 +105,7 @@ export default function Dashboard() {
           </Grid>
         </Grid>
 
-        {/* MAIN DASHBOARD CONTENT GRID */}
+        {/* MAIN CONTENT GRID */}
         <Grid container spacing={3}>
           <Grid item xs={12} lg={4}>
             <Stack spacing={3}>
@@ -116,9 +116,9 @@ export default function Dashboard() {
                 </Typography>
                 <Typography variant="caption" sx={{ color: '#94a3b8', lineHeight: 1.6, display: 'block' }}>
                   1. Select an HCS provider from the registry.<br />
-                  2. Initiate a query; client locks HBAR in x402 escrow.<br />
+                  2. Initiate a query; client sends HBAR via x402 .<br />
                   3. Provider streams response along with signed Reclaim zkTLS proof.<br />
-                  4. Proof validates on-chain; escrow settles automatically.
+                  4. Proof validates on-chain and reputation is automatically modified.
                 </Typography>
               </Card>
             </Stack>
@@ -126,9 +126,12 @@ export default function Dashboard() {
 
           <Grid item xs={12} lg={8}>
             <Stack spacing={3}>
-              <ProviderTable onSelect={handleProviderSelect} />
+              <ProviderTable 
+                onSelect={handleProviderSelect} 
+                selectedProviderId={selectedProvider?.agentId} 
+              />
 
-              {/* STANDARD INLINE TERMINAL WITH FULLSCREEN EXPAND BUTTON */}
+              {/* TERMINAL */}
               <Box sx={{ position: 'relative' }}>
                 <Box sx={{ position: 'absolute', top: 12, right: 16, zIndex: 10 }}>
                   <Tooltip title="Expand Dedicated Window">
@@ -150,41 +153,34 @@ export default function Dashboard() {
 
       </Container>
 
-      {/* FULL-SCREEN OVERLAY MODAL CONTAINING THE TERMINAL */}
+      {/* TERMINAL MODAL */}
       <Modal 
         open={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justify: 'center'
-        }}
+        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
         <Box 
           sx={{ 
-            width: '500%', 
-            height: '100', 
+            width: '90vw', 
+            height: '85vh', 
             bgcolor: '#060d17', 
-            position: 'center',
+            borderRadius: 3,
             outline: 'none',
             p: 3,
-            boxSizing: 'border-box',
-            // display: 'flex',
-            flexDirection: 'column'
+            position: 'relative'
           }}
         >
-          {/* CLOSE BUTTON AT TOP-RIGHT */}
-          <Box sx={{ position: 'absolute', top: 20, right: 24, zIndex: 100 }}>
+          <Box sx={{ position: 'absolute', top: 16, right: 16, zIndex: 100 }}>
             <IconButton 
               onClick={() => setIsModalOpen(false)} 
               size="medium" 
-              sx={{ color: '#00e5ff', bgcolor: 'rgba(0, 229, 255, 0.1)', '&:hover': { bgcolor: 'rgba(0, 229, 255, 0.2)' } }}
+              sx={{ color: '#00e5ff', bgcolor: 'rgba(0, 229, 255, 0.1)' }}
             >
               <CloseIcon />
             </IconButton>
           </Box>
 
-          <Box sx={{ flexGrow: 1, width: '100%', height: '100%' }}>
+          <Box sx={{ width: '100%', height: '100%' }}>
             <Terminal provider={selectedProvider} />
           </Box>
         </Box>

@@ -25,7 +25,7 @@ export default function RiskModal({ open, provider, onClose, onApprove }) {
           Target provider <strong>{provider.name}</strong> has a trust score of {provider.score}/100.
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          A World ID Selfie Check is required to override the risk policy and proceed via zkTLS escrow.
+          A World ID Selfie Check is required to override the risk policy to proceed without zkTLS.
         </Typography>
       </DialogContent>
       <DialogActions sx={{ p: 3 }}>

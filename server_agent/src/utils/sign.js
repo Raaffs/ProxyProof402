@@ -5,15 +5,18 @@ const { ethers } = require('ethers');
  * keccak256(abi.encodePacked(tokenId)) -> ECDSA.toEthSignedMessageHash
  */
 async function signTokenId(tokenId, privateKeyHex) {
-    const formattedKey = privateKeyHex.startsWith('0x') ? privateKeyHex : `0x${privateKeyHex}`;
+    if (!privateKeyHex) {
+        throw new Error("Private key is required and cannot be undefined.");
+    }
+    
+    // Ensure string type before calling startsWith
+    const keyStr = String(privateKeyHex);
+    const formattedKey = keyStr.startsWith('0x') ? keyStr : `0x${keyStr}`;
     const wallet = new ethers.Wallet(formattedKey);
 
-    // Matches Solidity: keccak256(abi.encodePacked(tokenId))
     const messageHashBytes = ethers.solidityPackedKeccak256(["uint256"], [tokenId]);
-
-    // wallet.signMessage automatically applies "\x19Ethereum Signed Message:\n32" prefix
-    // matching ECDSA.toEthSignedMessageHash(messageHash)
     const signature = await wallet.signMessage(ethers.getBytes(messageHashBytes));
+    
     return { signature, signerAddress: wallet.address };
 }
 

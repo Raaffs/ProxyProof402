@@ -5,7 +5,7 @@ const { ethers } = require('ethers');
  */
 function unwrapProof(inputProof) {
   let proof = inputProof;
-  
+
   // If it's a JSON string, attempt to parse it recursively
   while (typeof proof === 'string') {
     try {
@@ -24,7 +24,7 @@ function unwrapProof(inputProof) {
 }
 
 /**
- * Validates the zkTLS claim signature against the reconstructed canonical message.
+ * Validates the zkTLS claim signature offline against the reconstructed canonical message.
  */
 function verifyProofOffline(rawProof) {
   const proof = unwrapProof(rawProof);
@@ -83,9 +83,10 @@ function extractGeminiMetrics(rawProof) {
     // 2. Fallback to context extracted parameters
     if (!rawData && proof?.claimData?.context) {
       try {
-        const parsedContext = typeof proof.claimData.context === 'string'
-          ? JSON.parse(proof.claimData.context)
-          : proof.claimData.context;
+        const parsedContext =
+          typeof proof.claimData.context === 'string'
+            ? JSON.parse(proof.claimData.context)
+            : proof.claimData.context;
         rawData = parsedContext?.extractedParameters?.data || '';
       } catch (_) {}
     }
@@ -102,7 +103,7 @@ function extractGeminiMetrics(rawProof) {
         // Format A: Direct Express Wrapper response ({ output: "...", tokensUsed: 199 })
         if (jsonBody.output) {
           text = jsonBody.output;
-        } 
+        }
         // Format B: Direct Gemini API payload response
         else if (jsonBody.candidates?.[0]?.content?.parts?.[0]?.text) {
           text = jsonBody.candidates[0].content.parts[0].text;
@@ -166,9 +167,116 @@ function verifyRefundAccounting({
   };
 }
 
+/**
+ * Transforms JS Reclaim zkProof object into Solidity-compatible Reclaim.Proof struct layout.
+ */
+function transformProofForSolidity(rawProof) {
+  const proof = unwrapProof(rawProof);
+  const claimData = proof.claimData || {};
+
+  return {
+    claimInfo: {
+      provider: claimData.provider || 'http',
+      parameters: claimData.parameters || '',
+      context: claimData.context || '',
+    },
+    signedClaim: {
+      claim: {
+        identifier:
+          claimData.identifier ||
+          proof.identifier ||
+          '0x0000000000000000000000000000000000000000000000000000000000000000',
+        owner: claimData.owner || '0x0000000000000000000000000000000000000000',
+        timestampS: Number(claimData.timestampS || Math.floor(Date.now() / 1000)),
+        epoch: Number(claimData.epoch || 1),
+      },
+      signatures: proof.signatures || [],
+    },
+  };
+}
+
+/**
+ * Complete Ethers ABI definition matching AgentUsageValidator.sol
+ */
+const AGENT_USAGE_VALIDATOR_ABI = [
+  {
+    inputs: [
+      { internalType: 'uint256', name: 'tokenId', type: 'uint256' },
+      { internalType: 'bytes', name: 'agentSignature', type: 'bytes' },
+      {
+        components: [
+          {
+            components: [
+              { internalType: 'string', name: 'provider', type: 'string' },
+              { internalType: 'string', name: 'parameters', type: 'string' },
+              { internalType: 'string', name: 'context', type: 'string' },
+            ],
+            internalType: 'struct Reclaim.ClaimInfo',
+            name: 'claimInfo',
+            type: 'tuple',
+          },
+          {
+            components: [
+              {
+                components: [
+                  { internalType: 'bytes32', name: 'identifier', type: 'bytes32' },
+                  { internalType: 'address', name: 'owner', type: 'address' },
+                  { internalType: 'uint32', name: 'timestampS', type: 'uint32' },
+                  { internalType: 'uint32', name: 'epoch', type: 'uint32' },
+                ],
+                internalType: 'struct Reclaim.CompleteClaimData',
+                name: 'claim',
+                type: 'tuple',
+              },
+              { internalType: 'bytes[]', name: 'signatures', type: 'bytes[]' },
+            ],
+            internalType: 'struct Reclaim.SignedClaim',
+            name: 'signedClaim',
+            type: 'tuple',
+          },
+        ],
+        internalType: 'struct Reclaim.Proof',
+        name: 'proof',
+        type: 'tuple',
+      },
+    ],
+    name: 'validateUsage',
+    outputs: [
+      { internalType: 'uint256', name: 'actualTokensUsed', type: 'uint256' },
+      { internalType: 'bool', name: 'slashed', type: 'bool' },
+    ],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+];
+
+/**
+ * Triggers validateUsage on AgentUsageValidator.sol via smart contract execution.
+ */
+async function triggerOnChainValidation({ contractAddress, signer, responseData }) {
+  const contract = new ethers.Contract(contractAddress, AGENT_USAGE_VALIDATOR_ABI, signer);
+
+  const tokenId = 15;
+  const agentSignature = "0x75f0421c49f5eda6859f0a4a70b85e3aa5fdda6d19e71ac1ee50f227a24132390fe720cbd1a10131682e0a3a761e526ed740f4cd77c9b8956cb40bb22320f9701c";
+  const formattedProof = transformProofForSolidity(responseData.zkProof);
+  console.log("formatted proof: ",formattedProof)
+
+  const tx = await contract.validateUsage(
+    tokenId,
+    agentSignature,
+    formattedProof
+  );
+
+  const receipt = await tx.wait();
+  return receipt;
+}
+
 module.exports = {
+  unwrapProof,
   verifyProofOffline,
   extractGeminiMetrics,
   verifyRefundAccounting,
-  unwrapProof,
+  transformProofForSolidity,
+  triggerOnChainValidation,
+  AGENT_USAGE_VALIDATOR_ABI,
 };

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Client, PrivateKey, AccountId, TransferTransaction, TransactionId, Hbar } = require('@hashgraph/sdk');
 const env = require('../config/env.js');
+const { ethers } = require('ethers');
 
 class HederaPaymentService {
   constructor() {
@@ -77,6 +78,20 @@ class HederaPaymentService {
       totalPaidTinybars: totalAmount,
     };
   }
+
+  getEthersSigner() {
+    const provider = new ethers.JsonRpcProvider(
+      env.hederaRpcUrl || 'https://testnet.hashio.io/api'
+    );
+    const privateKey = env.evmkey || process.env.OPERATOR_PVKEY;
+    
+    if (!privateKey) {
+      throw new Error('Missing private key for EVM Signer.');
+    }
+
+    return new ethers.Wallet(privateKey, provider);
+  }
+  
 }
 
 module.exports = new HederaPaymentService();

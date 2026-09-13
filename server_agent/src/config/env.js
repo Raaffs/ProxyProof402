@@ -11,4 +11,6 @@ module.exports = {
     geminiApiKey: process.env.GEMINI_API_KEY,
     reclaimAppId: process.env.RECLAIM_APP_ID,
     reclaimAppSecret: process.env.RECLAIM_APP_SECRET,
+
+    SAMPLE_VALID_AGENT_KEY:process.env.SAMPLE_VALID_AGENT_KEY
 };
