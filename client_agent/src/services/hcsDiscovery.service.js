@@ -7,8 +7,11 @@ class HcsDiscoveryService {
     this.discoveryTopicId = env.hcsDiscoveryTopicId || null;
   }
 
+  /**
+   * Fallback agent directory used when HCS Mirror Node returns no active topics.
+   */
   getFallbackAgentCards() {
-    const baseUrl = (env.serverAgentUrl || 'http://localhost:8000').replace(/\/+$/, '');
+    const baseUrl = (env.serverAgentUrl ||  'http://localhost:8000').replace(/\/+$/, '');
     return [
       {
         agentId: '0.0.10436180',
@@ -21,14 +24,14 @@ class HcsDiscoveryService {
         agentId: '0.0.10436180',
         name: 'Claude-3.5-zkTLS-Agent',
         capabilities: ['claude', 'anthropic', 'coding', 'llm'],
-        endpoint: `${baseUrl}/api/protected/verified/claude`,
+        endpoint: `${baseUrl}/api/agent/claude`,
         rateTinybars: 1500,
       },
       {
         agentId: '0.0.10436180',
         name: 'OpenAI-GPT4-zkTLS-Agent',
         capabilities: ['openai', 'gpt', 'gpt4', 'chatgpt'],
-        endpoint: `${baseUrl}/api/protected/verified/openai`,
+        endpoint: `${baseUrl}/api/agent/openai`,
         rateTinybars: 1200,
       },
     ];
@@ -65,9 +68,6 @@ class HcsDiscoveryService {
     }
   }
 
-  /**
-   * Selects an appropriate AI provider based on prompt intent matching
-   */
   async discoverAndSelectAgent(userPrompt) {
     const agentCards = await this.fetchHcsAgentCards();
     const lowerPrompt = userPrompt.toLowerCase();

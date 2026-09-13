@@ -1,20 +1,31 @@
 const { ethers } = require('ethers');
 
+/**
+ * Recursively parses JSON strings if needed, unwrapping nested zkProof objects.
+ */
 function unwrapProof(inputProof) {
   let proof = inputProof;
-  if (typeof proof === 'string') {
+  
+  // If it's a JSON string, attempt to parse it recursively
+  while (typeof proof === 'string') {
     try {
       proof = JSON.parse(proof);
-    } catch {
-      return null;
+    } catch (_) {
+      break;
     }
   }
+
+  // Handle nested inner zkProof object wrappers
   if (proof && proof.zkProof) {
-    proof = proof.zkProof;
+    return unwrapProof(proof.zkProof);
   }
+
   return proof;
 }
 
+/**
+ * Validates the zkTLS claim signature against the reconstructed canonical message.
+ */
 function verifyProofOffline(rawProof) {
   const proof = unwrapProof(rawProof);
   if (!proof || !proof.claimData || !proof.signatures || proof.signatures.length === 0) {
@@ -53,15 +64,23 @@ function verifyProofOffline(rawProof) {
   };
 }
 
+/**
+ * Extracts output text and total token count across all payload variants.
+ */
 function extractGeminiMetrics(rawProof) {
   const proof = unwrapProof(rawProof) || rawProof;
 
+  let text = 'N/A';
+  let totalTokenCount = 0;
+
   try {
+    // 1. Check direct raw parameter strings from Reclaim output
     let rawData =
       proof?.extractedParameterValues?.data ||
       proof?.claimData?.parameters ||
       '';
 
+    // 2. Fallback to context extracted parameters
     if (!rawData && proof?.claimData?.context) {
       try {
         const parsedContext = typeof proof.claimData.context === 'string'
@@ -71,26 +90,42 @@ function extractGeminiMetrics(rawProof) {
       } catch (_) {}
     }
 
-    if (!rawData) return { text: 'N/A', totalTokenCount: 0 };
+    // 3. Attempt parsing raw HTTP payload body
+    if (rawData && typeof rawData === 'string') {
+      const headerEndIndex = rawData.indexOf('\r\n\r\n');
+      const searchString = headerEndIndex !== -1 ? rawData.slice(headerEndIndex + 4) : rawData;
+      const jsonStart = searchString.indexOf('{');
 
-    const headerEndIndex = rawData.indexOf('\r\n\r\n');
-    const searchString = headerEndIndex !== -1 ? rawData.slice(headerEndIndex + 4) : rawData;
-    const jsonStart = searchString.indexOf('{');
+      if (jsonStart !== -1) {
+        const jsonBody = JSON.parse(searchString.slice(jsonStart));
 
-    if (jsonStart !== -1) {
-      const jsonBody = JSON.parse(searchString.slice(jsonStart));
-      return {
-        text: jsonBody.candidates?.[0]?.content?.parts?.[0]?.text || 'N/A',
-        totalTokenCount: Number(jsonBody.usageMetadata?.totalTokenCount ?? 0),
-      };
+        // Format A: Direct Express Wrapper response ({ output: "...", tokensUsed: 199 })
+        if (jsonBody.output) {
+          text = jsonBody.output;
+        } 
+        // Format B: Direct Gemini API payload response
+        else if (jsonBody.candidates?.[0]?.content?.parts?.[0]?.text) {
+          text = jsonBody.candidates[0].content.parts[0].text;
+        }
+
+        // Token count extraction
+        if (jsonBody.tokensUsed !== undefined) {
+          totalTokenCount = Number(jsonBody.tokensUsed);
+        } else if (jsonBody.usageMetadata?.totalTokenCount !== undefined) {
+          totalTokenCount = Number(jsonBody.usageMetadata.totalTokenCount);
+        }
+      }
     }
   } catch (err) {
-    console.error('[Verifier] Extraction error:', err.message);
+    console.error('[Verifier] Metric Extraction Error:', err.message);
   }
 
-  return { text: 'N/A', totalTokenCount: 0 };
+  return { text, totalTokenCount };
 }
 
+/**
+ * Audits accounting refund mathematics using extracted metrics.
+ */
 function verifyRefundAccounting({
   zkProof,
   refundDetails,

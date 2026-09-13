@@ -1,5 +1,7 @@
-require('dotenv').config();
+const path = require('path');
 
+// Explicitly point to the .env file in the root directory
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const rawUrl = process.env.SERVER_AGENT_URL || process.env.SERVER_URL || 'http://localhost:8000';
 // Strip trailing slash if present to avoid double-slash issues in endpoint paths
 const serverAgentUrl = rawUrl.replace(/\/+$/, '');

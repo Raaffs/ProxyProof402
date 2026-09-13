@@ -5,12 +5,18 @@ import {
   Typography, 
   Card, 
   Stack, 
-  Container 
+  Container,
+  Modal,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import StorageIcon from '@mui/icons-material/Storage';
 import LockClockIcon from '@mui/icons-material/LockClock';
 import SpeedIcon from '@mui/icons-material/Speed';
 import ElectricBoltIcon from '@mui/icons-material/ElectricBolt';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import CloseIcon from '@mui/icons-material/Close';
+
 import Header from '../components/Header';
 import AgentManager from '../components/AgentManager';
 import ProviderTable from '../components/ProviderTable';
@@ -20,6 +26,7 @@ import RiskModal from '../components/RiskModal';
 export default function Dashboard() {
   const [selectedProvider, setSelectedProvider] = useState(null);
   const [showRiskModal, setShowRiskModal] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleProviderSelect = (provider) => {
     if (provider.score < 50) {
@@ -98,7 +105,7 @@ export default function Dashboard() {
           </Grid>
         </Grid>
 
-        {/* MAIN TWO-COLUMN DASHBOARD CONTENT */}
+        {/* MAIN DASHBOARD CONTENT GRID */}
         <Grid container spacing={3}>
           <Grid item xs={12} lg={4}>
             <Stack spacing={3}>
@@ -120,12 +127,68 @@ export default function Dashboard() {
           <Grid item xs={12} lg={8}>
             <Stack spacing={3}>
               <ProviderTable onSelect={handleProviderSelect} />
-              <Terminal provider={selectedProvider} />
+
+              {/* STANDARD INLINE TERMINAL WITH FULLSCREEN EXPAND BUTTON */}
+              <Box sx={{ position: 'relative' }}>
+                <Box sx={{ position: 'absolute', top: 12, right: 16, zIndex: 10 }}>
+                  <Tooltip title="Expand Dedicated Window">
+                    <IconButton 
+                      onClick={() => setIsModalOpen(true)} 
+                      size="small" 
+                      sx={{ color: '#00e5ff', bgcolor: 'rgba(0, 229, 255, 0.1)', '&:hover': { bgcolor: 'rgba(0, 229, 255, 0.2)' } }}
+                    >
+                      <OpenInFullIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+
+                <Terminal provider={selectedProvider} />
+              </Box>
             </Stack>
           </Grid>
         </Grid>
 
       </Container>
+
+      {/* FULL-SCREEN OVERLAY MODAL CONTAINING THE TERMINAL */}
+      <Modal 
+        open={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justify: 'center'
+        }}
+      >
+        <Box 
+          sx={{ 
+            width: '500%', 
+            height: '100', 
+            bgcolor: '#060d17', 
+            position: 'center',
+            outline: 'none',
+            p: 3,
+            boxSizing: 'border-box',
+            // display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          {/* CLOSE BUTTON AT TOP-RIGHT */}
+          <Box sx={{ position: 'absolute', top: 20, right: 24, zIndex: 100 }}>
+            <IconButton 
+              onClick={() => setIsModalOpen(false)} 
+              size="medium" 
+              sx={{ color: '#00e5ff', bgcolor: 'rgba(0, 229, 255, 0.1)', '&:hover': { bgcolor: 'rgba(0, 229, 255, 0.2)' } }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          <Box sx={{ flexGrow: 1, width: '100%', height: '100%' }}>
+            <Terminal provider={selectedProvider} />
+          </Box>
+        </Box>
+      </Modal>
 
       <RiskModal 
         open={showRiskModal} 

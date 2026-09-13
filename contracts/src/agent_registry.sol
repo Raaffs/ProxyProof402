@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./human_registry.sol"; // <-- Import HumanRegistry (and its interface) here!
 
 contract AgentIdentityRegistry is ERC721, Ownable {
-    using ECDSA for bytes32;
+using ECDSA for bytes32;
 
     uint256 private _nextTokenId;
 

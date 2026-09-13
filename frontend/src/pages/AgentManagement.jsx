@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, 
   Container, 
@@ -30,26 +30,22 @@ import LinkIcon from '@mui/icons-material/Link';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import { ethers } from 'ethers';
 
-// Contract Configuration
+const BACKEND_URL = "http://localhost:5000/api/agents";
 const CONTRACT_ADDRESS = "0x6D0e102f25391Cd2778839a80E90c8C88FC0B2F1";
-const HEDERA_TESTNET_CHAIN_ID = "0x128"; // 296 in decimal
+const HEDERA_TESTNET_CHAIN_ID = "0x128";
 
 const AgentRegistryABI = [
   "function registerAgent(address operationalKey, string uri, string thirdpartyEndpoint, bytes signature, uint128 tinyHbarRate) external returns (uint256)"
 ];
 
-/**
- * Helper: Force MetaMask/Browser Wallet to switch or add Hedera Testnet RPC
- */
 async function switchToHederaTestnet() {
-  if (!window.ethereum) throw new Error("No EVM wallet detected");
+  if (!window.ethereum) return;
   try {
     await window.ethereum.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: HEDERA_TESTNET_CHAIN_ID }],
     });
   } catch (switchError) {
-    // Code 4902 indicates that the chain has not been added to MetaMask
     if (switchError.code === 4902) {
       await window.ethereum.request({
         method: "wallet_addEthereumChain",
@@ -70,20 +66,8 @@ async function switchToHederaTestnet() {
 }
 
 export default function AgentManagementPage() {
-  const [agents, setAgents] = useState([
-    { 
-      id: '1', 
-      name: 'ArbitrageBot-V2', 
-      endpoint: 'http://localhost:8080', 
-      hbar: 120.5, 
-      status: 'Idle', 
-      deployed: false, 
-      privateKey: '',
-      operationalKey: '',
-      uri: 'https://api.example.com/agent-1.json',
-      rate: '100000000'
-    }
-  ]);
+  const [agents, setAgents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [openAdd, setOpenAdd] = useState(false);
   const [openTransfer, setOpenTransfer] = useState(false);
@@ -96,10 +80,26 @@ export default function AgentManagementPage() {
   const [apiPort, setApiPort] = useState('8080');
   const [agentPrivateKey, setAgentPrivateKey] = useState('');
   const [tokenURI, setTokenURI] = useState('https://api.example.com/agent.json');
-  const [tinyHbarRate, setTinyHbarRate] = useState('100000000'); // 1 HBAR (10^8 tinybars)
+  const [tinyHbarRate, setTinyHbarRate] = useState('100000000');
   const [transferAmount, setTransferAmount] = useState('');
 
-  const handleAddAgent = () => {
+  const fetchAgents = async () => {
+    try {
+      const res = await fetch(BACKEND_URL);
+      const data = await res.json();
+      setAgents(data);
+    } catch (err) {
+      console.error("Failed to fetch agents from backend:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAgents();
+  }, []);
+
+  const handleAddAgent = async () => {
     if (!agentName || !apiPort || !agentPrivateKey) return;
 
     let derivedAddress = '';
@@ -107,7 +107,7 @@ export default function AgentManagementPage() {
       const wallet = new ethers.Wallet(agentPrivateKey);
       derivedAddress = wallet.address;
     } catch (e) {
-      alert("Invalid Private Key format! Must be a valid 64-character hex string.");
+      alert("Invalid Private Key format!");
       return;
     }
 
@@ -126,19 +126,26 @@ export default function AgentManagementPage() {
       rate: tinyHbarRate
     };
 
-    setAgents([...agents, newAgent]);
+    try {
+      const response = await fetch(BACKEND_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAgent)
+      });
 
-    // Format raw string for local .env setup
-    const envOutput = `AGENT_PRIVATE_KEY=${agentPrivateKey}\nAGENT_ENDPOINT=${endpoint}\nAGENT_URI=${tokenURI}\nAGENT_RATE=${tinyHbarRate}`;
-    console.log("--- RAW ENV CONFIG FOR DAEMON ---");
-    console.log(envOutput);
-    
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(envOutput);
-      alert("Agent registered locally! .env variables copied to clipboard.");
+      if (!response.ok) throw new Error("Failed to persist agent");
+
+      await fetchAgents();
+
+      const envOutput = `AGENT_PRIVATE_KEY=${agentPrivateKey}\nAGENT_OPERATIONAL_KEY=${derivedAddress}\nAGENT_ENDPOINT=${endpoint}\nAGENT_URI=${tokenURI}\nAGENT_RATE=${tinyHbarRate}`;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(envOutput);
+        alert("Agent saved to config.json! Configuration copied to clipboard.");
+      }
+    } catch (err) {
+      alert(`Error saving agent: ${err.message}`);
     }
-    
-    // Reset Form
+
     setAgentName('');
     setApiHost('http://localhost');
     setApiPort('8080');
@@ -148,46 +155,37 @@ export default function AgentManagementPage() {
     setOpenAdd(false);
   };
 
-  /**
-   * ON-CHAIN DEPLOYMENT ON HEDERA TESTNET
-   */
   const handleDeployAgent = async (agent) => {
     if (!window.ethereum) {
-      alert("MetaMask or compatible EVM wallet not detected.");
+      alert("No EVM wallet detected. Please install MetaMask.");
       return;
     }
 
     if (!agent.privateKey) {
-      alert("Missing agent private key for signature generation.");
+      alert("Missing Agent Private Key! Please re-add the agent with its key.");
       return;
     }
 
     setLoadingDeployId(agent.id);
 
     try {
-      // 1. Force network switch to Hedera Testnet (Chain ID 0x128 / 296)
       await switchToHederaTestnet();
 
-      // 2. Get Human Wallet Signer via MetaMask
       const provider = new ethers.BrowserProvider(window.ethereum);
       await provider.send("eth_requestAccounts", []);
       const humanSigner = await provider.getSigner();
       const humanAddress = await humanSigner.getAddress();
 
-      // 3. Create Agent Wallet from Private Key to compute ECDSA signature locally
       const agentWallet = new ethers.Wallet(agent.privateKey);
       const operationalKeyAddress = agentWallet.address;
 
-      // 4. Construct message hash matching contract: keccak256(abi.encodePacked(msg.sender, uri, thirdpartyEndpoint))
       const packedHash = ethers.solidityPackedKeccak256(
         ["address", "string", "string"],
         [humanAddress, agent.uri, agent.endpoint]
       );
 
-      // 5. Sign message using Agent Key
       const agentSignature = await agentWallet.signMessage(ethers.getBytes(packedHash));
 
-      // 6. Submit Transaction through Human Wallet on Hedera Testnet
       const contract = new ethers.Contract(CONTRACT_ADDRESS, AgentRegistryABI, humanSigner);
       
       const tx = await contract.registerAgent(
@@ -198,21 +196,23 @@ export default function AgentManagementPage() {
         BigInt(agent.rate)
       );
 
-      console.log("Hedera Tx submitted:", tx.hash);
       await tx.wait();
 
-      // Update state to reflect deployment
-      setAgents(agents.map(a => a.id === agent.id ? { 
-        ...a, 
-        deployed: true, 
-        status: 'Active', 
-        operationalKey: operationalKeyAddress 
-      } : a));
+      await fetch(`${BACKEND_URL}/${agent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deployed: true,
+          status: 'Active',
+          operationalKey: operationalKeyAddress
+        })
+      });
 
-      alert(`Agent registered on Hedera Testnet! Tx Hash: ${tx.hash}`);
+      await fetchAgents();
+      alert(`Agent registered on Hedera Testnet!\nTx Hash: ${tx.hash}`);
     } catch (error) {
-      console.error("Hedera registration failed:", error);
-      alert(`Registration failed: ${error.reason || error.message}`);
+      console.error("Deployment failed:", error);
+      alert(`Deployment Failed: ${error.reason || error.message}`);
     } finally {
       setLoadingDeployId(null);
     }
@@ -229,7 +229,7 @@ export default function AgentManagementPage() {
               Agent Fleet Manager
             </Typography>
             <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-              Manage local execution environments, fund agent gas wallets, or deploy agents directly on Hedera EVM.
+              Manage agents, sync daemon configurations, and deploy to Hedera EVM Testnet.
             </Typography>
           </Box>
           <Button 
@@ -248,88 +248,99 @@ export default function AgentManagementPage() {
           </Button>
         </Box>
 
-        {/* Agent Cards Grid */}
-        <Grid container spacing={3}>
-          {agents.map((agent) => (
-            <Grid item xs={12} md={6} key={agent.id}>
-              <Card 
-                sx={{ 
-                  p: 3, 
-                  bgcolor: 'rgba(10, 25, 41, 0.75)', 
-                  backdropFilter: 'blur(16px)', 
-                  borderRadius: 3, 
-                  border: '1px solid rgba(0, 229, 255, 0.2)',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
-                }}
-              >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <SmartToyIcon sx={{ color: '#00e5ff', fontSize: 32 }} />
-                    <Box>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff' }}>
-                        {agent.name}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace' }}>
-                        {agent.endpoint}
-                      </Typography>
+        {/* Content Section */}
+        {isLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 8 }}>
+            <CircularProgress sx={{ color: '#00e5ff' }} />
+          </Box>
+        ) : (
+          <Grid container spacing={3}>
+            {agents.map((agent) => (
+              <Grid item xs={12} sm={6} md={6} key={agent.id} sx={{ display: 'flex' }}>
+                <Card 
+                  sx={{ 
+                    p: 3, 
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justify: 'space-between',
+                    bgcolor: 'rgba(10, 25, 41, 0.75)', 
+                    backdropFilter: 'blur(16px)', 
+                    borderRadius: 3, 
+                    border: '1px solid rgba(0, 229, 255, 0.2)',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
+                  }}
+                >
+                  <Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <SmartToyIcon sx={{ color: '#00e5ff', fontSize: 32 }} />
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
+                            {agent.name}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#00e5ff', fontFamily: 'monospace' }}>
+                            {agent.endpoint}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Chip 
+                        label={agent.deployed ? "On-Chain" : "Local"} 
+                        color={agent.deployed ? "success" : "default"} 
+                        variant="outlined"
+                        size="small"
+                      />
+                    </Box>
+
+                    <Box sx={{ p: 2, bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2, mb: 3 }}>
+                      <Grid container spacing={1}>
+                        <Grid item xs={6}>
+                          <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>HBAR Balance</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#00e5ff', fontFamily: 'monospace' }}>
+                            {agent.hbar} HBAR
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>Operational Key</Typography>
+                          <Typography variant="body2" sx={{ color: '#fff', fontFamily: 'monospace' }}>
+                            {agent.operationalKey ? `${agent.operationalKey.substring(0, 6)}...${agent.operationalKey.substring(agent.operationalKey.length - 4)}` : 'Not Set'}
+                          </Typography>
+                        </Grid>
+                      </Grid>
                     </Box>
                   </Box>
-                  <Chip 
-                    label={agent.deployed ? "On-Chain Deployed" : "Local Only"} 
-                    color={agent.deployed ? "success" : "default"} 
-                    variant="outlined"
-                    size="small"
-                  />
-                </Box>
 
-                <Box sx={{ p: 2, bgcolor: 'rgba(19, 47, 76, 0.3)', borderRadius: 2, mb: 3 }}>
-                  <Grid container spacing={2}>
-                    <Grid item xs={6}>
-                      <Typography variant="caption" sx={{ color: '#64748b' }}>HBAR Balance</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 700, color: '#00e5ff', fontFamily: 'monospace' }}>
-                        {agent.hbar} HBAR
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="caption" sx={{ color: '#64748b' }}>Operational Key</Typography>
-                      <Typography variant="body2" sx={{ color: '#fff', fontFamily: 'monospace' }}>
-                        {agent.operationalKey ? `${agent.operationalKey.substring(0, 8)}...` : 'Not Derived'}
-                      </Typography>
-                    </Grid>
-                  </Grid>
-                </Box>
-
-                {/* Actions */}
-                <Stack direction="row" spacing={1.5}>
-                  <Button 
-                    fullWidth 
-                    variant="outlined" 
-                    startIcon={<SendIcon />}
-                    onClick={() => { setSelectedAgent(agent); setOpenTransfer(true); }}
-                    sx={{ borderColor: 'rgba(0, 229, 255, 0.3)', color: '#00e5ff' }}
-                  >
-                    Transfer HBAR
-                  </Button>
-
-                  {!agent.deployed && (
+                  <Stack direction="row" spacing={1.5} sx={{ mt: 'auto' }}>
                     <Button 
                       fullWidth 
-                      variant="contained" 
-                      startIcon={loadingDeployId === agent.id ? <CircularProgress size={20} color="inherit" /> : <RocketLaunchIcon />}
-                      disabled={loadingDeployId === agent.id}
-                      onClick={() => handleDeployAgent(agent)}
-                      sx={{ bgcolor: '#ff9800', color: '#000', fontWeight: 700, '&:hover': { bgcolor: '#e68a00' } }}
+                      variant="outlined" 
+                      startIcon={<SendIcon />}
+                      onClick={() => { setSelectedAgent(agent); setOpenTransfer(true); }}
+                      sx={{ borderColor: 'rgba(0, 229, 255, 0.3)', color: '#00e5ff', textTransform: 'none' }}
                     >
-                      Deploy On-Chain
+                      Transfer HBAR
                     </Button>
-                  )}
-                </Stack>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
 
-        {/* --- ADD AGENT MODAL --- */}
+                    {!agent.deployed && (
+                      <Button 
+                        fullWidth 
+                        variant="contained" 
+                        startIcon={loadingDeployId === agent.id ? <CircularProgress size={20} color="inherit" /> : <RocketLaunchIcon />}
+                        disabled={loadingDeployId === agent.id}
+                        onClick={() => handleDeployAgent(agent)}
+                        sx={{ bgcolor: '#ff9800', color: '#000', fontWeight: 700, textTransform: 'none', '&:hover': { bgcolor: '#e68a00' } }}
+                      >
+                        Deploy
+                      </Button>
+                    )}
+                  </Stack>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+
+        {/* Modal: Add Agent */}
         <Dialog 
           open={openAdd} 
           onClose={() => setOpenAdd(false)}
@@ -338,260 +349,146 @@ export default function AgentManagementPage() {
               bgcolor: '#0a1929', 
               color: '#fff', 
               border: '1px solid rgba(0, 229, 255, 0.3)', 
-              borderRadius: 4,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
-              maxWidth: 500,
-              width: '100%'
+              borderRadius: 3, 
+              maxWidth: 520, 
+              width: '100%' 
             } 
           }}
         >
           <DialogTitle sx={{ p: 3, pb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Box sx={{ p: 1, bgcolor: 'rgba(0, 229, 255, 0.1)', borderRadius: 2, display: 'flex' }}>
-                <SmartToyIcon sx={{ color: '#00e5ff' }} />
-              </Box>
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
-                  Add Agent
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#64748b' }}>
-                  Register local daemon & store parameters
-                </Typography>
-              </Box>
+              <SmartToyIcon sx={{ color: '#00e5ff' }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff' }}>Add New Agent</Typography>
             </Box>
-            <IconButton onClick={() => setOpenAdd(false)} sx={{ color: '#64748b', '&:hover': { color: '#fff' } }}>
-              <CloseIcon />
-            </IconButton>
+            <IconButton onClick={() => setOpenAdd(false)} sx={{ color: '#64748b' }}><CloseIcon /></IconButton>
           </DialogTitle>
 
-          <DialogContent sx={{ p: 3, pt: 2 }}>
-            <Stack spacing={2.5}>
-              
-              {/* Agent Name */}
+          <DialogContent sx={{ p: 3 }}>
+            <Stack spacing={2}>
               <Box>
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>
-                  AGENT NAME
-                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>AGENT NAME</Typography>
                 <TextField 
                   fullWidth 
                   placeholder="e.g. Arbitrage-Daemon-01" 
                   variant="outlined" 
                   value={agentName} 
                   onChange={(e) => setAgentName(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <VpnKeyIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ 
-                    '& .MuiOutlinedInput-root': { 
-                      color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2,
-                      '& fieldset': { borderColor: 'rgba(0,229,255,0.2)' },
-                      '&.Mui-focused fieldset': { borderColor: '#00e5ff' }
-                    } 
-                  }}
+                  InputProps={{ startAdornment: <InputAdornment position="start"><VpnKeyIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} /></InputAdornment> }}
+                  sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
                 />
               </Box>
 
-              {/* Private Key Input */}
               <Box>
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>
-                  AGENT OPERATIONAL PRIVATE KEY (HEX)
-                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>PRIVATE KEY (HEX)</Typography>
                 <TextField 
                   fullWidth 
-                  type="password"
+                  type="password" 
                   placeholder="0x..." 
                   variant="outlined" 
                   value={agentPrivateKey} 
                   onChange={(e) => setAgentPrivateKey(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <KeyIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ 
-                    '& .MuiOutlinedInput-root': { 
-                      color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2,
-                      '& fieldset': { borderColor: 'rgba(0,229,255,0.2)' },
-                      '&.Mui-focused fieldset': { borderColor: '#00e5ff' }
-                    } 
-                  }}
+                  InputProps={{ startAdornment: <InputAdornment position="start"><KeyIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} /></InputAdornment> }}
+                  sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
                 />
               </Box>
 
-              {/* Host & Port */}
               <Grid container spacing={2}>
                 <Grid item xs={8}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>
-                    HOST URL
-                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>HOST</Typography>
                   <TextField 
                     fullWidth 
                     placeholder="http://localhost" 
                     variant="outlined" 
                     value={apiHost} 
                     onChange={(e) => setApiHost(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <DnsIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{ 
-                      '& .MuiOutlinedInput-root': { 
-                        color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2,
-                        '& fieldset': { borderColor: 'rgba(0,229,255,0.2)' },
-                        '&.Mui-focused fieldset': { borderColor: '#00e5ff' }
-                      } 
-                    }}
+                    InputProps={{ startAdornment: <InputAdornment position="start"><DnsIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} /></InputAdornment> }}
+                    sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
                   />
                 </Grid>
-
                 <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>
-                    PORT
-                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>PORT</Typography>
                   <TextField 
                     fullWidth 
                     placeholder="8080" 
                     variant="outlined" 
                     value={apiPort} 
                     onChange={(e) => setApiPort(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <NumbersIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 18 }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{ 
-                      '& .MuiOutlinedInput-root': { 
-                        color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2,
-                        '& fieldset': { borderColor: 'rgba(0,229,255,0.2)' },
-                        '&.Mui-focused fieldset': { borderColor: '#00e5ff' }
-                      } 
-                    }}
+                    InputProps={{ startAdornment: <InputAdornment position="start"><NumbersIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 18 }} /></InputAdornment> }}
+                    sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
                   />
                 </Grid>
               </Grid>
 
-              {/* Token URI */}
               <Box>
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>
-                  TOKEN METADATA URI
-                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>METADATA URI</Typography>
                 <TextField 
                   fullWidth 
                   placeholder="https://..." 
                   variant="outlined" 
                   value={tokenURI} 
                   onChange={(e) => setTokenURI(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LinkIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ 
-                    '& .MuiOutlinedInput-root': { 
-                      color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2,
-                      '& fieldset': { borderColor: 'rgba(0,229,255,0.2)' },
-                      '&.Mui-focused fieldset': { borderColor: '#00e5ff' }
-                    } 
-                  }}
+                  InputProps={{ startAdornment: <InputAdornment position="start"><LinkIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} /></InputAdornment> }}
+                  sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
                 />
               </Box>
 
-              {/* TinyHbar Rate */}
               <Box>
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>
-                  TINYHBAR RATE (1 HBAR = 100000000)
-                </Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, mb: 0.5, display: 'block' }}>TINYHBAR RATE</Typography>
                 <TextField 
                   fullWidth 
-                  type="number"
+                  type="number" 
                   placeholder="100000000" 
                   variant="outlined" 
                   value={tinyHbarRate} 
                   onChange={(e) => setTinyHbarRate(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <AttachMoneyIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ 
-                    '& .MuiOutlinedInput-root': { 
-                      color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2,
-                      '& fieldset': { borderColor: 'rgba(0,229,255,0.2)' },
-                      '&.Mui-focused fieldset': { borderColor: '#00e5ff' }
-                    } 
-                  }}
+                  InputProps={{ startAdornment: <InputAdornment position="start"><AttachMoneyIcon sx={{ color: 'rgba(0, 229, 255, 0.5)', fontSize: 20 }} /></InputAdornment> }}
+                  sx={{ '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(19, 47, 76, 0.4)', borderRadius: 2 } }}
                 />
               </Box>
-
             </Stack>
           </DialogContent>
 
-          <DialogActions sx={{ p: 3, pt: 1, gap: 1 }}>
-            <Button 
-              onClick={() => setOpenAdd(false)} 
-              sx={{ color: '#94a3b8', fontWeight: 600, textTransform: 'none' }}
-            >
-              Cancel
-            </Button>
+          <DialogActions sx={{ p: 3, pt: 0 }}>
+            <Button onClick={() => setOpenAdd(false)} sx={{ color: '#94a3b8' }}>Cancel</Button>
             <Button 
               variant="contained" 
               onClick={handleAddAgent}
               disabled={!agentName || !apiPort || !agentPrivateKey}
-              sx={{ 
-                bgcolor: '#00e5ff', 
-                color: '#060d17', 
-                fontWeight: 700, 
-                px: 3,
-                textTransform: 'none',
-                boxShadow: '0 0 15px rgba(0, 229, 255, 0.4)',
-                '&:hover': { bgcolor: '#00b2cc' } 
-              }}
+              sx={{ bgcolor: '#00e5ff', color: '#060d17', fontWeight: 700, '&:hover': { bgcolor: '#00b2cc' } }}
             >
               Add Agent
             </Button>
           </DialogActions>
         </Dialog>
 
-        {/* Transfer Modal */}
+        {/* Modal: Transfer Funds */}
         <Dialog 
           open={openTransfer} 
           onClose={() => setOpenTransfer(false)} 
-          PaperProps={{ sx: { bgcolor: '#0a1929', color: '#fff', border: '1px solid rgba(0,229,255,0.3)', borderRadius: 3 } }}
+          PaperProps={{ sx: { bgcolor: '#0a1929', color: '#fff', border: '1px solid rgba(0,229,255,0.3)', borderRadius: 3, maxWidth: 400, width: '100%' } }}
         >
           <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            Transfer HBAR to {selectedAgent?.name}
+            <Typography variant="h6">Transfer HBAR</Typography>
             <IconButton onClick={() => setOpenTransfer(false)} sx={{ color: '#64748b' }}><CloseIcon /></IconButton>
           </DialogTitle>
           <DialogContent>
+            <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+              Send funds to target wallet for {selectedAgent?.name}.
+            </Typography>
             <TextField 
               autoFocus 
               fullWidth 
-              type="number"
+              type="number" 
               label="Amount (HBAR)" 
               variant="outlined" 
               value={transferAmount} 
               onChange={(e) => setTransferAmount(e.target.value)}
-              sx={{ mt: 1, '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,229,255,0.3)' } } }}
+              sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,229,255,0.3)' } }, '& label': { color: '#94a3b8' } }}
             />
           </DialogContent>
           <DialogActions sx={{ p: 2.5 }}>
             <Button onClick={() => setOpenTransfer(false)} sx={{ color: '#94a3b8' }}>Cancel</Button>
-            <Button variant="contained" onClick={() => setOpenTransfer(false)} sx={{ bgcolor: '#00e5ff', color: '#000', fontWeight: 700 }}>Send Funds</Button>
+            <Button variant="contained" onClick={() => setOpenTransfer(false)} sx={{ bgcolor: '#00e5ff', color: '#000', fontWeight: 700 }}>Send</Button>
           </DialogActions>
         </Dialog>
 
@@ -599,4 +496,3 @@ export default function AgentManagementPage() {
     </Box>
   );
 }
-

@@ -1,32 +1,57 @@
-const { Client, PrivateKey, AccountId, TransactionId, TransferTransaction, Hbar } = require('@hashgraph/sdk');
+require('dotenv').config();
+const { Client, PrivateKey, AccountId, TransferTransaction, TransactionId, Hbar } = require('@hashgraph/sdk');
 const env = require('../config/env.js');
 
 class HederaPaymentService {
   constructor() {
-    const operatorIdStr = env.operatorId || process.env.OPERATOR_ID || process.env.PAYEE_ACCOUNT_ID || '0.0.10436180';
-    const operatorKeyStr = env.operatorKey || process.env.SERVER_OPERATOR_KEY || process.env.ACCOUNT_PRIVATE_KEY;
-
-    if (!operatorIdStr || !operatorKeyStr) {
-      throw new Error('HederaPaymentService: Missing OPERATOR_ID or OPERATOR_KEY credentials.');
-    }
-
-    this.operatorId = AccountId.fromString(operatorIdStr);
-
-    const cleanKey = String(operatorKeyStr).trim().replace(/^["']|["']$/g, '');
-    try {
-      this.operatorKey = PrivateKey.fromStringECDSA(cleanKey);
-    } catch (_) {
-      this.operatorKey = PrivateKey.fromString(cleanKey);
-    }
-
-    this.client = Client.forTestnet().setOperator(this.operatorId, this.operatorKey);
+    this.client = null;
+    this.operatorId = null;
+    this.operatorKey = null;
+    this.isInitialized = false;
   }
 
-  /**
-   * Constructs and signs an x402-compliant Hedera TransferTransaction payload.
-   * Supports optional overpayment to test dynamic server-side refunds.
-   */
+  init() {
+    if (this.isInitialized) return;
+
+    const operatorIdStr =
+      process.env.OPERATOR_ID ||
+      process.env.PAYEE_ACCOUNT_ID ||
+      env?.operatorId ||
+      '0.0.10436180';
+
+    const operatorKeyStr =
+      process.env.OPERATOR_KEY ||
+      process.env.SERVER_OPERATOR_KEY ||
+      process.env.ACCOUNT_PRIVATE_KEY ||
+      env?.operatorKey;
+
+    if (!operatorIdStr || !operatorKeyStr) {
+      throw new Error(
+        'HederaPaymentService Error: OPERATOR_ID or OPERATOR_KEY missing in environment variables (.env).'
+      );
+    }
+
+    try {
+      this.operatorId = AccountId.fromString(operatorIdStr);
+      const cleanKey = String(operatorKeyStr).trim().replace(/^["']|["']$/g, '');
+
+      try {
+        this.operatorKey = PrivateKey.fromStringECDSA(cleanKey);
+      } catch (_) {
+        this.operatorKey = PrivateKey.fromString(cleanKey);
+      }
+
+      this.client = Client.forTestnet().setOperator(this.operatorId, this.operatorKey);
+      this.isInitialized = true;
+    } catch (err) {
+      throw new Error(`HederaPaymentService Initialization Failed: ${err.message}`);
+    }
+  }
+
   async createSignedPaymentHeader(requirement, extraAmountTinybars = 0) {
+    // Lazy initialize on first call
+    this.init();
+
     const totalAmount = parseInt(requirement.amount, 10) + extraAmountTinybars;
     const feePayerId = AccountId.fromString(requirement.extra?.feePayer || requirement.payTo);
 

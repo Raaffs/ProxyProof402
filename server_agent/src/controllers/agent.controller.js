@@ -1,7 +1,7 @@
 const facilitatorService = require('../services/facilitator.service.js');
 const hederaService = require('../services/hedera.service.js');
 const geminiService = require('../services/gemini.service.js');
-// Placeholders for future services
+const signTokenId =  require('../utils/sign')
 const env = require('../config/env.js');
 
 class AgentController {
@@ -98,6 +98,8 @@ class AgentController {
                 totalTokens: totalTokenCount,
                 tokenRateTinybars: agentCreds.tokenRateTinybars,
             });
+
+            const { signature, signerAddress } = await signTokenId(5, env.OPERATOR_PRIVATE_KEY);
             console.log('[Server]: refund done ')
             res.json({
                 status: 'success',
@@ -109,6 +111,8 @@ class AgentController {
                 output: text,
                 tokensUsed: totalTokenCount,
                 zkProof: zkProof,
+                tokenId: 5,
+                signature: signature,
                 refundDetails: refundDetails,
             });
         } catch (err) {

@@ -1,0 +1,52 @@
+{
+  "agents": [
+    {
+      "id": "1789237882393",
+      "name": "wewe",
+      "endpoint": "http://localhost:8080",
+      "hbar": 0,
+      "status": "Active",
+      "deployed": true,
+      "privateKey": "0x4c083836253272d53452294f9b8c04e28e461a296e399c56858e734493309a47",
+      "operationalKey": "0x778A48366F1444aa118820Bf7637A8d203fB31d8",
+      "uri": "https://api.example.com/agent.json",
+      "rate": "100000000"
+    },
+    {
+      "id": "1789268369807",
+      "name": "sample 1",
+      "endpoint": "http://localhost:8080",
+      "hbar": 0,
+      "status": "Idle",
+      "deployed": false,
+      "privateKey": "0x4c0883a69102934a1234567890abcdef1234567890abcdef1234567890abcdef",
+      "operationalKey": "0x67B7fA4176b16A1de89AA5Da5588b23895fB8B85",
+      "uri": "https://api.example.com/agent.json",
+      "rate": "100000000"
+    },
+    {
+      "id": "1789268394510",
+      "name": "Arbitrary ",
+      "endpoint": "http://localhost:8080",
+      "hbar": 0,
+      "status": "Idle",
+      "deployed": false,
+      "privateKey": "0x4c0883a69102934a1234567890abcdef1234567890abcdef1234567890abcdef",
+      "operationalKey": "0x67B7fA4176b16A1de89AA5Da5588b23895fB8B85",
+      "uri": "https://api.example.com/agent.json",
+      "rate": "100000000"
+    },
+    {
+      "id": "1789268420494",
+      "name": "Spooky",
+      "endpoint": "http://localhost:8080",
+      "hbar": 0,
+      "status": "Idle",
+      "deployed": false,
+      "privateKey": "0x4c0883a69102934a1234567890abcdef1234567890abcdef1234567890abcdef",
+      "operationalKey": "0x67B7fA4176b16A1de89AA5Da5588b23895fB8B85",
+      "uri": "https://api.example.com/agent.json",
+      "rate": "100000000"
+    }
+  ]
+}
