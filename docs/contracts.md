@@ -48,31 +48,35 @@ The **ProxyProof402** smart contract suite is deployed on the **Hedera EVM Testn
 
 ---
 
-## Smart Contracts Architecture Diagram
+## PlantUML Interaction Diagram
 
-```mermaid
-graph TD
-    subgraph IdentityLayer ["1. Identity & Ownership Layer"]
-        HR["HumanRegistry.sol<br/>• registerHuman()<br/>• isHuman(account): bool"]
-        AIR["AgentIdentityRegistry.sol (ERC-8004 NFT)<br/>• registerAgent(opKey, uri, endpoint, sig, rate)<br/>• setOperationalKey(tokenId, newOpKey, sig)<br/>• verifyAgentKey(tokenId, keyToVerify): bool<br/>• agents(tokenId): AgentStruct"]
-    end
+```plantuml
+@startuml Contracts_Overview
+actor "Agent Owner" as Owner
+actor "Client" as Client
+participant "HumanRegistry" as HR
+participant "AgentIdentityRegistry" as AIR
+participant "AgentUsageValidator" as AUV
+participant "Reputation" as Rep
 
-    subgraph VerificationLayer ["2. Verification & Slashing Layer"]
-        AUV["AgentUsageValidator.sol (Verification Engine)<br/>• validateUsage(tokenId, agentSig, proof)<br/>• extractJsonStringValue(params, key)"]
-        Reclaim["Reclaim Solidity SDK<br/>• verifyProof(proof)"]
-        Rep["Reputation.sol<br/>• deductAndTransferPoint(agentId, client)<br/>• payAgentWithPoints(receivingAgentId, amount)<br/>• agentTrustPoints(agentId): uint256"]
-    end
+== Registration ==
+Owner -> HR: Register as Human
+Owner -> AIR: Register Agent NFT (with Operational Key & Endpoint)
+AIR -> HR: Verify Human Status
 
-    HumanOwner["Human Owner"]
-    ClientAccount["Client Account / Agent"]
+== Validation & Slashing ==
+Client -> AUV: validateUsage(tokenId, signature, zkTLS proof)
+AUV -> AIR: Verify Operational Key & Endpoint
+AUV -> AUV: Verify zkTLS Proof Cryptographically
+alt Endpoint Mismatch / Fraud
+    AUV -> Rep: deductAndTransferPoint(tokenId, Client)
+    Rep -> Rep: Slash Agent Score & Reward Client Point
+end
 
-    HumanOwner -->|"registerHuman()"| HR
-    HumanOwner -->|"registerAgent() + signature"| AIR
-    AIR -->|"Check isHuman(msg.sender)"| HR
-
-    ClientAccount -->|"validateUsage(tokenId, sig, proof)"| AUV
-    AUV -->|"verifyAgentKey(tokenId, opKey)"| AIR
-    AUV -->|"getAgentThirdPartyEndpoint(tokenId)"| AIR
+== Point Redemption ==
+Client -> Rep: payAgentWithPoints(receivingAgentId, points)
+@enduml
+```
     AUV -->|"verifyProof(proof)"| Reclaim
     AUV -->|"If URL mismatch: deductAndTransferPoint()"| Rep
     Rep -->|"Check ownerOf(agentId)"| AIR

@@ -33,34 +33,34 @@ The **Client Agent** (`client_agent/`) acts as an autonomous proxy and execution
 
 ---
 
-## Client Agent Architecture Diagram
+## PlantUML Client Interaction Diagram
 
-```mermaid
-graph TD
-    User["User / Web Frontend"]
+```plantuml
+@startuml Client_Overview
+actor "User" as User
+participant "Client Agent" as Client
+participant "Hedera Mirror Node" as Mirror
+participant "Server Agent" as Server
+participant "AgentUsageValidator Contract" as Validator
 
-    subgraph ClientNode ["Client Agent Node (Express 5000)"]
-        Main["main.js & SSE Stream<br/>• /api/execute-agent-stream<br/>• World ID /api/verify-proof"]
-        ClientSvc["clientAgent.service.js<br/>• processUserPrompt()<br/>• Execution Orchestrator"]
-        HCSDisc["hcsDiscovery.service.js<br/>• fetchHcsAgentCards()<br/>• HCS-26 Payload Parser"]
-        PaymentSvc["hederaPayment.service.js<br/>• createSignedPaymentHeader()<br/>• Frozen TransferTransaction"]
-        VerifierUtils["verifier.utils.js<br/>• verifyProofOffline()<br/>• verifyRefundAccounting()<br/>• transformProofForSolidity()<br/>• triggerOnChainValidation()"]
-    end
+== 1. Discovery ==
+Client -> Mirror: Fetch Agents via HCS Topic
+Mirror --> Client: Return Registered Agents
 
-    subgraph Infrastructure ["Hedera & Server Dependencies"]
-        Mirror["Hedera Mirror Node<br/>(/api/v1/topics/0.0.10402297)"]
-        Server["Server Agent (Port 8000)<br/>(402 Challenge & zkTLS)"]
-        ValidatorContract["AgentUsageValidator.sol<br/>(Hedera EVM Chain 296)"]
-    end
+== 2. Execution & Local Audit ==
+Client -> Server: Execute Query with x402 Payment
+Server --> Client: AI Response + zkTLS Proof + Refund
+Client -> Client: Verify Witness Signatures Offline
+Client -> Client: Audit Refund Math & Token Usage
 
-    User -->|"1. Prompt Input"| Main
-    Main -->|"2. processUserPrompt(prompt)"| ClientSvc
-    ClientSvc -->|"3. fetchHcsAgentCards()"| HCSDisc
-    HCSDisc -->|"GET /topics/messages"| Mirror
-    ClientSvc -->|"4. Initial GET Request"| Server
-    Server -->|"HTTP 402 Challenge"| ClientSvc
-    ClientSvc -->|"5. createSignedPaymentHeader()"| PaymentSvc
-    ClientSvc -->|"6. GET with X-PAYMENT Header via zkFetch"| Server
+== 3. On-Chain Validation ==
+Client -> Validator: Submit Proof to validateUsage()
+alt Fraud Detected
+    Validator -> Validator: Slash Agent Reputation On-Chain
+end
+Client --> User: Display Verified Result
+@enduml
+```
     Server -->|"Response + zkTLS Proof + Refund"| ClientSvc
     ClientSvc -->|"7. Offline Witness Check & Refund Audit"| VerifierUtils
     ClientSvc -->|"8. validateUsage(tokenId, sig, proof)"| ValidatorContract
