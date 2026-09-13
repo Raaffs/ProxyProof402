@@ -152,7 +152,7 @@ graph TD
 
     ServerRefund -->|Return Excess HBAR| Client
 
-    Client -->|validateUsage(tokenId, sig, proof)| AUV
+    Client -->|"validateUsage(tokenId, sig, proof)"| AUV
     AUV -->|Verify Key & Endpoint| AIR
     AUV -->|Slash Agent Score on Fraud| Rep
 ```
